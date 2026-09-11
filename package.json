@@ -1,0 +1,30 @@
+{
+  "name": "flyrank-capstone-social-studio",
+  "version": "1.0.0",
+  "description": "Turn one blog post into a scheduled, idempotent, multi-platform social campaign. FlyRank backend capstone.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "seed": "node src/seed.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "social-media",
+    "adapter-pattern",
+    "idempotency",
+    "scheduler",
+    "express",
+    "mastodon"
+  ],
+  "author": "Muhammad Ammar Asad",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "express": "^4.19.2"
+  }
+}
