@@ -1,0 +1,20 @@
+import { knownPlatforms } from './generator.js';
+
+export const config = {
+  port: Number(process.env.PORT || 3000),
+  platforms: (process.env.PLATFORMS || 'mastodon,mock_x,mock_linkedin')
+    .split(',').map((s) => s.trim()).filter(Boolean),
+  useAI: String(process.env.USE_AI).toLowerCase() === 'true',
+  scheduler: {
+    tickMs: Number(process.env.SCHEDULER_TICK_MS || 2000),
+    enabled: String(process.env.SCHEDULER_ENABLED ?? 'true').toLowerCase() !== 'false',
+  },
+};
+
+// fail fast on a typo in PLATFORMS
+const known = new Set(knownPlatforms());
+for (const p of config.platforms) {
+  if (!known.has(p)) {
+    throw new Error(`PLATFORMS contains unknown platform "${p}". Known: ${[...known].join(', ')}`);
+  }
+}
