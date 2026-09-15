@@ -2,6 +2,7 @@ import express from 'express';
 import { config } from './config.js';
 import { postsRouter } from './routes/posts.js';
 import { variantsRouter } from './routes/variants.js';
+import { systemRouter } from './routes/system.js';
 
 export function createApp() {
   const app = express();
@@ -30,6 +31,7 @@ export function createApp() {
 
   app.use('/posts', postsRouter);
   app.use('/variants', variantsRouter);
+  app.use('/', systemRouter);
 
   // fallback error handler
   app.use((err, _req, res, _next) => {
