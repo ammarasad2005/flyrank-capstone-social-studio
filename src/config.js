@@ -5,6 +5,13 @@ export const config = {
   platforms: (process.env.PLATFORMS || 'mastodon,mock_x,mock_linkedin')
     .split(',').map((s) => s.trim()).filter(Boolean),
   useAI: String(process.env.USE_AI).toLowerCase() === 'true',
+  mastodon: {
+    baseUrl: process.env.MASTODON_BASE_URL || '',
+    accessToken: process.env.MASTODON_ACCESS_TOKEN || '',
+    visibility: process.env.MASTODON_VISIBILITY || 'unlisted',
+  },
+  // "mastodon=mock_x" reroutes a platform to another adapter — the PROBE 6 swap.
+  adapterOverride: process.env.ADAPTER_OVERRIDE || '',
   scheduler: {
     tickMs: Number(process.env.SCHEDULER_TICK_MS || 2000),
     enabled: String(process.env.SCHEDULER_ENABLED ?? 'true').toLowerCase() !== 'false',

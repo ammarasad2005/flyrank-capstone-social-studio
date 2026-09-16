@@ -139,3 +139,16 @@ export function finishAttempt(id, { status, external_id, external_url, preview, 
 export function listAttempts() {
   return db.prepare('SELECT * FROM publish_attempts ORDER BY id DESC').all();
 }
+
+// ── mock_posts (mock adapters' own idempotent store) ───────────────────────────
+// Idempotent by idempotency_key: a repeat with the same key returns the first row.
+export function upsertMockPost({ adapter, idempotency_key, content }) {
+  const info = db.prepare(
+    `INSERT OR IGNORE INTO mock_posts (adapter, idempotency_key, content) VALUES (?,?,?)`
+  ).run(adapter, idempotency_key, content);
+  const row = db.prepare('SELECT * FROM mock_posts WHERE idempotency_key = ?').get(idempotency_key);
+  return { row, created: info.changes === 1 };
+}
+export function listMockPosts() {
+  return db.prepare('SELECT * FROM mock_posts ORDER BY id DESC').all();
+}

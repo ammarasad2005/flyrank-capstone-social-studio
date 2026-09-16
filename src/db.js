@@ -66,6 +66,17 @@ db.exec(`
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  -- Where mock adapters record what they WOULD post. The UNIQUE idempotency_key
+  -- makes each mock adapter idempotent on its own: a repeated publish with the
+  -- same key returns the existing mock post instead of creating a second one.
+  CREATE TABLE IF NOT EXISTS mock_posts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    adapter         TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    content         TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE INDEX IF NOT EXISTS idx_variants_post   ON variants(post_id);
   CREATE INDEX IF NOT EXISTS idx_slots_due       ON slots(status, scheduled_at);
   CREATE INDEX IF NOT EXISTS idx_attempts_slot   ON publish_attempts(slot_id);
