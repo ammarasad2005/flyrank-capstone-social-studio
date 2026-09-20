@@ -1,0 +1,56 @@
+# BUILDLOG — honest AI-usage log
+
+This capstone was built with an AI coding assistant. This log records where AI genuinely
+helped, where it was wrong or unhelpful, and what I decided myself. The point of the
+capstone is judgement, so here is the honest version.
+
+## Where AI helped
+
+- **Boilerplate & shape.** Express routers, the SQLite schema, and the repo layer were
+  drafted fast with AI. Straightforward and mostly correct on the first pass.
+- **Getting the idempotency argument crisp.** AI was useful as a sounding board for
+  *why* the two-layer design (UNIQUE app-key + adapter-native dedupe) is safe against a
+  crash *between* the network send and the DB commit. Talking it through is what led to
+  the durable-restart test that actually simulates that exact window.
+- **Docs.** The README architecture diagram and the constraint/idempotency tables were
+  drafted with AI, then trimmed by hand to match what the code actually does.
+
+## Where AI was wrong or I overrode it
+
+- **First idempotency sketch was too weak.** The initial version only checked "is there a
+  succeeded attempt?" at the app layer. That does **not** survive a crash after the send
+  but before the commit — the retry would post again. I pushed back and added the
+  adapter-level guarantee (Mastodon's `Idempotency-Key` header; UNIQUE `mock_posts` key)
+  so both layers are idempotent. Only then does exactly-once actually hold.
+- **`mock_posts.created` detection.** The mock's first draft tried to infer "was this a
+  duplicate?" with an awkward sentinel. I replaced it with the honest signal — the SQLite
+  `INSERT OR IGNORE` `changes` count (`created: info.changes === 1`).
+- **better-sqlite3 booleans.** AI wanted to bind JS booleans directly; SQLite doesn't have
+  a boolean type in better-sqlite3, so statuses are TEXT enums instead — cleaner anyway.
+- **Docker/Redis stack.** An early suggestion assumed a Redis-backed queue. The target
+  environment has no Docker/Redis, so I kept everything in-process on SQLite with an
+  atomic-claim scheduler. This is a real limitation (single node) and is stated in the
+  README rather than hidden.
+- **AI variant generation is optional on purpose.** AI proposed making generation the
+  centrepiece. But the *graded* property is enforcement, not authorship — a bad AI variant
+  must still be blocked. So generation defaults to deterministic templates; Gemini is an
+  opt-in (`USE_AI=true`) that flows through the exact same validation gate.
+
+## Decisions I made myself
+
+- The four-table model (`posts / variants / slots / publish_attempts`) plus `mock_posts`,
+  and the `variant:slot` idempotency key.
+- The `SocialPublisher` seam and the `ADAPTER_OVERRIDE` swap mechanism, so PROBE 6 is a
+  pure config change.
+- Phased commits, each phase runnable and verified before the next (see git history):
+  Phase 1 design + scaffold → Phase 2 ingest + generate → Phase 3 review + schedule →
+  Phase 4 adapters + idempotent publish → Phase 5 durable scheduler + tests + docs.
+- Writing the crash-restart test to simulate the precise failure window rather than a
+  vague "call it twice" — that's the test that actually proves durability.
+
+## What I'd do next with more time
+
+- A real X/LinkedIn adapter behind the same interface (one file each).
+- Move to Postgres row-locking for a multi-node scheduler.
+- Backoff + capped retries on transient adapter failures (today a failed publish parks the
+  slot as `failed` for manual retry; crash-orphaned slots auto-resume).

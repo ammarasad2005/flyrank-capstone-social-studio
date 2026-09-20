@@ -24,7 +24,9 @@ export function createApp() {
         'POST /variants/:id/approve|reject': 'review workflow',
         'POST /variants/:id/schedule': 'schedule an approved variant {at, adapter}',
         'GET  /slots': 'the schedule calendar',
+        'POST /slots/:id/publish': 'publish a slot now (idempotent; same path the scheduler uses)',
         'GET  /history': 'publish history (every attempt + result)',
+        'GET  /mock-posts': 'what the mock adapters recorded (their preview store)',
       },
     });
   });
