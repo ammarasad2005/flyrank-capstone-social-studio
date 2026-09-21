@@ -10,6 +10,10 @@ adapter — **exactly once**, even under retries and worker crashes.
 FlyRank backend capstone. JavaScript / Node.js · Express · SQLite. No Docker, no Redis —
 `npm install && npm start` and it runs.
 
+**Real target: Telegram** (free Bot API, real message + link). **Mastodon** is included as a
+second real adapter. **X** and **LinkedIn** are mocks (no free write APIs). Swapping any of
+them is a config change — see PROBE 6.
+
 ---
 
 ## Why the interesting bits are interesting
@@ -19,25 +23,30 @@ FlyRank backend capstone. JavaScript / Node.js · Express · SQLite. No Docker, 
 | **Single source of truth** | A post is ingested once into `posts`; every variant references it. |
 | **Constraints enforced in code** | `src/profiles.js` validates length / hashtag count / links / tone / emoji. A bad variant is **blocked before review** — generation drops it and manual create returns `422` **naming the broken rule**. |
 | **Review gate** | Variants move `draft → approved → published` (or `rejected`). Only `approved` variants can be scheduled; an unapproved schedule is a `409` with a message. Editing re-validates and sends the variant back to `draft`. |
-| **Adapter seam** | One `SocialPublisher` interface (`src/adapters/base.js`). One real target (Mastodon) + two mocks (X, LinkedIn). Swapping targets is a config change (`ADAPTER_OVERRIDE`) with **zero** business-logic edits. |
-| **Idempotent + durable** | Every send goes through `publishSlot()` keyed by `variant:slot`. Exactly-once is enforced at **two layers** (see below) so retries and crashes never double-post. |
+| **Adapter seam** | One `SocialPublisher` interface (`src/adapters/base.js`). Real target Telegram (+ Mastodon), plus two mocks (X, LinkedIn). Swapping targets is a config change (`ADAPTER_OVERRIDE`) with **zero** business-logic edits. |
+| **Idempotent + durable** | Every send goes through `publishSlot()` keyed by `variant:slot`. Exactly-once (never a duplicate) is enforced by a claim-before-send attempt ledger + adapter-level dedupe (see below), so retries and crashes never double-post. |
 | **History** | Every attempt and its result is in `publish_attempts`; `GET /history` shows it. |
 
-### Exactly-once, in two layers
+### Exactly-once (never a duplicate)
+
+Every attempt row moves `pending → in_flight → succeeded | failed | uncertain`, where
+`in_flight` is set **right before** the network send — so the crash window is recorded.
 
 ```
 publishSlot(slot)                           key = `${variantId}:${slotId}`
    │
-   ├─ 1. APP layer   publish_attempts.idempotency_key is UNIQUE.
-   │                 A 'succeeded' attempt short-circuits — the adapter isn't called twice.
+   ├─ APP layer     publish_attempts.idempotency_key is UNIQUE.
+   │                A 'succeeded' attempt short-circuits — the adapter isn't called twice.
    │
-   └─ 2. ADAPTER layer   every adapter is idempotent on that same key:
-                         • Mastodon → native `Idempotency-Key` request header
-                         • mocks    → UNIQUE mock_posts.idempotency_key
+   └─ ADAPTER layer, on restart after an in_flight crash:
+        • idempotent target (Mastodon Idempotency-Key header, mocks' UNIQUE key)
+              → safe to re-send; the target returns the same post  → exactly one
+        • non-idempotent target (Telegram sendMessage, no dedupe key)
+              → we REFUSE to re-send and mark the attempt 'uncertain' → at-most-once
 ```
 
-So even if the worker sends the post and then **dies before recording success**, the
-restart re-runs the slot, the adapter recognises the key, and you still get one post.
+Either way you never get a duplicate. (For Telegram the trade-off is honest: rather than
+risk a double-post, an ambiguous in-flight send is flagged for review instead of retried.)
 
 ### Durable scheduling
 
@@ -67,12 +76,13 @@ A single in-process worker (`src/scheduler.js`) ticks every `SCHEDULER_TICK_MS`:
                  └──────────────┘
                         │  scheduler.js claims due slots (atomic)
                         ▼
-                 ┌──────────────┐        ┌────────────────────────────┐
-                 │ publishSlot  │───────▶│ getAdapter(id)             │
-                 │ (idempotent) │        │  ├─ MastodonPublisher (real)│
-                 └──────────────┘        │  ├─ MockXPublisher          │
+                 ┌──────────────┐        ┌─────────────────────────────┐
+                 │ publishSlot  │───────▶│ getAdapter(id)              │
+                 │ (idempotent) │        │  ├─ TelegramPublisher (real)│
+                 └──────────────┘        │  ├─ MastodonPublisher (real)│
+                        │                │  ├─ MockXPublisher          │
                         │                │  └─ MockLinkedInPublisher   │
-                        ▼                └────────────────────────────┘
+                        ▼                └─────────────────────────────┘
                  publish_attempts  ◀── history + idempotency ledger
 ```
 
@@ -101,23 +111,28 @@ Run the test suite (the scary cases):
 npm test
 ```
 
-### Turning on the REAL Mastodon target
+### Turning on the REAL Telegram target
 
-1. On any open instance (e.g. `mastodon.social`) → **Settings → Development → New
-   application**, scope **`write:statuses`**, copy the access token.
-2. In `.env`:
+1. In the Telegram app, message **@BotFather** → `/newbot` → copy the **bot token**.
+2. Create a channel, add the bot as an **admin**, and note the channel id (`@mychannel`
+   for a public channel, or the numeric `-100…` id).
+3. In `.env`:
    ```
-   MASTODON_BASE_URL=https://mastodon.social
-   MASTODON_ACCESS_TOKEN=...        # your token — stays in .env, never committed
+   TELEGRAM_BOT_TOKEN=123456:ABC...   # stays in .env, never committed
+   TELEGRAM_CHAT_ID=@mychannel
    ```
-3. Schedule a variant with `{"adapter":"mastodon"}` — it lands as a real toot with the link.
+4. Schedule a variant with `{"adapter":"telegram"}` — it lands as a real message; a public
+   channel yields a real `https://t.me/…` permalink in `/history`.
+
+Mastodon works the same way as a second real target (`MASTODON_BASE_URL` +
+`MASTODON_ACCESS_TOKEN`, scope `write:statuses`, schedule with `{"adapter":"mastodon"}`).
 
 ### The adapter swap (config-only)
 
-Publish your "mastodon" campaigns through the X mock without touching code:
+Publish your "telegram" campaigns through the X mock without touching code:
 
 ```
-ADAPTER_OVERRIDE=mastodon=mock_x
+ADAPTER_OVERRIDE=telegram=mock_x
 ```
 
 ---
@@ -147,8 +162,11 @@ ADAPTER_OVERRIDE=mastodon=mock_x
 - **Variant text is templated by default.** Optional Gemini generation (`USE_AI=true`) exists,
   but the *graded* behaviour is enforcement, not authorship — a weak AI variant is still
   blocked if it breaks a rule.
-- **Mocks only, out of the box.** X and LinkedIn are mocks by design (no free write APIs); the
-  real target is Mastodon. The seam means adding a real X/LinkedIn adapter is one new file.
+- **X and LinkedIn are mocks by design** (no free write APIs). The real targets are Telegram
+  and Mastodon. The seam means adding a real X/LinkedIn adapter is one new file.
+- **Telegram has no idempotency key.** Its exactly-once is achieved by refusing to retry an
+  in-flight send (at-most-once); an idempotent target like Mastodon can additionally re-send
+  safely. The trade-off is documented and tested (`tests/durable-restart.test.js`).
 - **No media/image generation, analytics, or thread-splitting** — explicit non-goals.
 
 See `EVIDENCE.md` for one proof per requirement and `BUILDLOG.md` for the AI-usage log.

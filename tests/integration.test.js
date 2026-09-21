@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 process.env.DATABASE_PATH = `/tmp/sms-int-${randomUUID()}.db`;
 process.env.SCHEDULER_ENABLED = 'false';
 process.env.USE_AI = 'false';
+process.env.PLATFORMS = 'mastodon,mock_x,mock_linkedin';
 
 const { createApp } = await import('../src/app.js');
 

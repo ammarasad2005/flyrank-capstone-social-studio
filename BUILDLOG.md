@@ -48,6 +48,18 @@ capstone is judgement, so here is the honest version.
 - Writing the crash-restart test to simulate the precise failure window rather than a
   vague "call it twice" — that's the test that actually proves durability.
 
+## Late change: Telegram as the real target
+
+I'd built Mastodon as the real target first, but couldn't create an account (sign-ups were
+closed on the instances I could reach). Rather than fake PROBE 4, I added a real
+**Telegram** Bot API adapter — which surfaced a genuinely interesting problem the AI's first
+idempotency design had glossed over: **Telegram's `sendMessage` has no idempotency key.**
+So "just retry on restart" would double-post. I added a claim-before-send `in_flight` state
+and made the orchestrator adapter-aware: idempotent targets (Mastodon/mocks) are safely
+re-sent, non-idempotent ones (Telegram) are refused and flagged `uncertain` rather than
+risked. Both paths are now tested. Mastodon stayed in as a second real adapter — which is
+exactly the point of the seam.
+
 ## What I'd do next with more time
 
 - A real X/LinkedIn adapter behind the same interface (one file each).

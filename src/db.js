@@ -55,8 +55,11 @@ db.exec(`
     slot_id         INTEGER NOT NULL REFERENCES slots(id) ON DELETE CASCADE,
     idempotency_key TEXT NOT NULL UNIQUE,
     adapter         TEXT NOT NULL,
+    -- 'in_flight' = the network send was issued but its outcome is not yet recorded
+    -- (the crash window). 'uncertain' = we crashed in that window for a NON-idempotent
+    -- adapter and refused to re-send, to guarantee no duplicate.
     status          TEXT NOT NULL DEFAULT 'pending'
-                      CHECK (status IN ('pending','succeeded','failed')),
+                      CHECK (status IN ('pending','in_flight','succeeded','failed','uncertain')),
     external_id     TEXT,
     external_url    TEXT,
     preview         TEXT,

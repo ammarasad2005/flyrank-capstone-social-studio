@@ -13,6 +13,14 @@ export const PROFILES = {
     tone: 'neutral', // no ALL-CAPS shouting
     maxLinks: 4,
   },
+  telegram: {
+    id: 'telegram',
+    label: 'Telegram',
+    maxLength: 4096, // Telegram sendMessage hard limit
+    maxHashtags: 5,
+    tone: 'neutral', // no ALL-CAPS shouting
+    maxLinks: 5,
+  },
   mock_x: {
     id: 'mock_x',
     label: 'X (mock)',

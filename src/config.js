@@ -2,9 +2,14 @@ import { knownPlatforms } from './generator.js';
 
 export const config = {
   port: Number(process.env.PORT || 3000),
-  platforms: (process.env.PLATFORMS || 'mastodon,mock_x,mock_linkedin')
+  platforms: (process.env.PLATFORMS || 'telegram,mock_x,mock_linkedin')
     .split(',').map((s) => s.trim()).filter(Boolean),
   useAI: String(process.env.USE_AI).toLowerCase() === 'true',
+  telegram: {
+    botToken: process.env.TELEGRAM_BOT_TOKEN || '',
+    chatId: process.env.TELEGRAM_CHAT_ID || '',
+    parseMode: process.env.TELEGRAM_PARSE_MODE || '', // '', 'HTML', or 'MarkdownV2'
+  },
   mastodon: {
     baseUrl: process.env.MASTODON_BASE_URL || '',
     accessToken: process.env.MASTODON_ACCESS_TOKEN || '',

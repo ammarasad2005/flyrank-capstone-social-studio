@@ -1,4 +1,5 @@
 import { MastodonPublisher } from './mastodon.js';
+import { TelegramPublisher } from './telegram.js';
 import { MockXPublisher, MockLinkedInPublisher } from './mock.js';
 import { config } from '../config.js';
 
@@ -8,6 +9,11 @@ import { config } from '../config.js';
  * done purely with the ADAPTER_OVERRIDE env var; no business logic is touched.
  */
 const builders = {
+  telegram: () => new TelegramPublisher({
+    botToken: config.telegram.botToken,
+    chatId: config.telegram.chatId,
+    parseMode: config.telegram.parseMode,
+  }),
   mastodon: () => new MastodonPublisher({
     baseUrl: config.mastodon.baseUrl,
     accessToken: config.mastodon.accessToken,

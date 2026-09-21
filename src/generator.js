@@ -57,6 +57,11 @@ function templateFor(platform, post) {
     const content = `${post.title}\n\n${excerpt}\n\nRead more in the full post.\n\n${tagLine}`.trim();
     return { content, hashtags: tags };
   }
+  if (platform === 'telegram') {
+    const excerpt = firstSentences(body, 900);
+    const content = `${post.title}\n\n${excerpt}\n\n${tagLine}`.trim();
+    return { content, hashtags: tags };
+  }
   // mastodon (neutral, 500)
   const budget = p.maxLength - post.title.length - tagLine.length - 8;
   const excerpt = firstSentences(body, Math.max(20, budget));

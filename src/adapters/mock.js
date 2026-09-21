@@ -14,7 +14,7 @@ import { upsertMockPost } from '../repo.js';
  */
 export class MockPublisher extends SocialPublisher {
   constructor(id, { label } = {}) {
-    super(id);
+    super(id, { idempotent: true }); // UNIQUE mock_posts.idempotency_key
     this.label = label ?? id;
   }
 

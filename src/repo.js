@@ -126,6 +126,12 @@ export function insertPendingAttempt({ variant_id, slot_id, idempotency_key, ada
   `).run({ variant_id, slot_id, idempotency_key, adapter, attempt_no: attempt_no ?? 1 });
   return db.prepare('SELECT * FROM publish_attempts WHERE id = ?').get(info.lastInsertRowid);
 }
+// Mark an attempt as 'in_flight' immediately BEFORE issuing the network send, so a
+// crash in the send window is recoverable (and detectable for non-idempotent targets).
+export function markAttemptInFlight(id) {
+  db.prepare(`UPDATE publish_attempts SET status='in_flight', updated_at=datetime('now') WHERE id=?`).run(id);
+  return db.prepare('SELECT * FROM publish_attempts WHERE id = ?').get(id);
+}
 export function finishAttempt(id, { status, external_id, external_url, preview, error }) {
   db.prepare(`
     UPDATE publish_attempts

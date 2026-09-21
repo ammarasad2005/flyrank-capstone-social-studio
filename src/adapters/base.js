@@ -27,9 +27,16 @@
  * the same key produces exactly one post on the target and returns the same result.
  */
 export class SocialPublisher {
-  /** @param {string} id */
-  constructor(id) {
+  /**
+   * @param {string} id
+   * @param {{idempotent?: boolean}} [opts] idempotent=true means the target itself
+   *   dedupes on the idempotency key (Mastodon header, mock UNIQUE key), so a crashed
+   *   send can be safely re-issued. false (e.g. Telegram) means re-sending could
+   *   duplicate, so the orchestrator refuses to retry an in-flight send.
+   */
+  constructor(id, { idempotent = false } = {}) {
     this.id = id;
+    this.idempotent = idempotent;
   }
   // eslint-disable-next-line no-unused-vars
   async publish(ctx) {

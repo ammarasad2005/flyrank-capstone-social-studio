@@ -64,28 +64,27 @@ it back to `draft`, so an unreviewed edit can't sneak through either.
 
 ## PROBE 4 — Approve + schedule → a real message lands with the link
 
-Enable the Mastodon target in `.env` (`MASTODON_BASE_URL`, `MASTODON_ACCESS_TOKEN`,
-scope `write:statuses`), then:
+Enable the Telegram target in `.env` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`), then:
 
 ```
 $ POST /variants/1/approve
-$ POST /variants/1/schedule   { adapter:"mastodon", at:"<~2 min from now>" }
+$ POST /variants/1/schedule   { adapter:"telegram", at:"<~2 min from now>" }
   -> 201  slot pending
 
 # the durable scheduler publishes on the next tick after `at`:
-scheduler: slot 1 -> published via mastodon
+scheduler: slot 1 -> published via telegram
 
 $ GET /history
-[ { "status":"succeeded", "adapter":"mastodon",
-    "external_url":"https://<instance>/@you/<status-id>", "idempotency_key":"1:1" } ]
+[ { "status":"succeeded", "adapter":"telegram",
+    "external_id":"<message_id>",
+    "external_url":"https://t.me/<channel>/<message_id>", "idempotency_key":"1:1" } ]
 ```
 
-The `external_url` is the live permalink to the toot. (Runs against any open instance
-such as `mastodon.social`; the token stays in `.env`, never committed.)
+The `external_url` is the live permalink to the message (public channels). Mastodon works
+identically via `{"adapter":"mastodon"}`. Secrets stay in `.env`, never committed.
 
-> Status: verified live once the reviewer/user supplies an instance + `write:statuses`
-> token. The exact same `publishSlot()` path is already proven end-to-end against the
-> mocks below, and the Mastodon adapter sends the native `Idempotency-Key` header.
+> Status: verified live once the bot token + chat id are supplied. The exact same
+> `publishSlot()` path is already proven end-to-end against the mocks below.
 
 ---
 
@@ -107,14 +106,19 @@ still `pending`, and one mock post already exists. On restart the scheduler recl
 slot and re-runs it:
 
 ```
-ok - crash after send, before commit: restart re-runs and does NOT double-post
+ok - IDEMPOTENT adapter: crash after send, restart re-runs and does NOT double-post
    assert listMockPosts().length === 1     // STILL one post
    assert attempt.status === 'succeeded'   // converged
    assert slot.status === 'published'       // converged
+
+ok - NON-IDEMPOTENT adapter (telegram): an in-flight crash is NOT retried (no duplicate)
+   assert out.skipped === true             // refused to re-send
+   assert attempt.status === 'uncertain'   // flagged, not duplicated
 ```
 
-Exactly-once holds because the idempotency key `variant:slot` is UNIQUE at the app layer
-**and** each adapter is idempotent on the same key.
+No duplicate is possible: the key `variant:slot` is UNIQUE at the app layer, the attempt is
+marked `in_flight` *before* the send, and on restart an idempotent target (Mastodon/mocks)
+is safely re-sent while a non-idempotent one (Telegram) is refused rather than risked.
 
 ---
 
@@ -128,7 +132,8 @@ $ POST /slots/1/publish
 ```
 
 The slot still targets `mastodon`, but the registry reroutes it to the X mock purely from
-the environment. Zero edits to ingestion, review, scheduling, or publish logic.
+the environment. Zero edits to ingestion, review, scheduling, or publish logic. The same
+mechanism reroutes the real Telegram target (`ADAPTER_OVERRIDE=telegram=mock_x`).
 
 ---
 
@@ -136,11 +141,11 @@ the environment. Zero edits to ingestion, review, scheduling, or publish logic.
 
 ```
 $ npm test
-# tests 7
-# pass 7
+# tests 8
+# pass 8
 # fail 0
 ```
 
 Covering: blocked variant (`integration`), refused schedule (`integration`), duplicate
 publish (`integration` + `durable-restart`), adapter swap (`adapter-swap`), and durable
-crash-restart (`durable-restart`).
+crash-restart for **both** an idempotent and a non-idempotent target (`durable-restart`).

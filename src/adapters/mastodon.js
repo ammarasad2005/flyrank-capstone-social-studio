@@ -11,7 +11,7 @@ import { SocialPublisher } from './base.js';
  */
 export class MastodonPublisher extends SocialPublisher {
   constructor({ baseUrl, accessToken, visibility = 'unlisted' } = {}) {
-    super('mastodon');
+    super('mastodon', { idempotent: true }); // native Idempotency-Key header
     this.baseUrl = (baseUrl || '').replace(/\/+$/, '');
     this.accessToken = accessToken;
     this.visibility = visibility;
