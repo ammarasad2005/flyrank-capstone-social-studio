@@ -64,33 +64,41 @@ it back to `draft`, so an unreviewed edit can't sneak through either.
 
 ## PROBE 4 — Approve + schedule → a real message lands with the link
 
-Enable the Telegram target in `.env` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`), then:
+**Verified live** against Telegram (bot `@flyrank_studio_bot`, public channel
+`@my_flyrank_demo`). Secrets live in `.env` / host env vars, never committed.
 
 ```
-$ POST /variants/1/approve
-$ POST /variants/1/schedule   { adapter:"telegram", at:"<~2 min from now>" }
-  -> 201  slot pending
+$ POST /posts        -> post 1 "How we cut build times in half"
+$ POST /posts/1/generate -> created: telegram(1), mock_x(2), mock_linkedin(3)
+$ POST /variants/1/approve                                   -> 200
+$ POST /variants/1/schedule { adapter:"telegram", at:"2026-09-27T12:16:23Z" }  -> 201 slot pending
 
-# the durable scheduler publishes on the next tick after `at`:
+# the durable scheduler fired on its own on the next tick after `at`:
+scheduler: started, tick=1500ms
 scheduler: slot 1 -> published via telegram
 
 $ GET /history
-[ { "status":"succeeded", "adapter":"telegram",
-    "external_id":"<message_id>",
-    "external_url":"https://t.me/<channel>/<message_id>", "idempotency_key":"1:1" } ]
+[
+  {
+    "id": 1, "variant_id": 1, "slot_id": 1,
+    "idempotency_key": "1:1",
+    "adapter": "telegram",
+    "status": "succeeded",
+    "external_id": "3",
+    "external_url": "https://t.me/my_flyrank_demo/3",
+    "preview": "How we cut build times in half\n\nWe profiled the pipeline, cached dependencies, and parallelised the test matrix. CI dropped from 22 minutes to under 10.\n\n#Build #Times #Half"
+  }
+]
 ```
 
-The `external_url` is the live permalink to the message (public channels). Mastodon works
-identically via `{"adapter":"mastodon"}`. Secrets stay in `.env`, never committed.
-
-> Status: verified live once the bot token + chat id are supplied. The exact same
-> `publishSlot()` path is already proven end-to-end against the mocks below.
+👉 The live message: **https://t.me/my_flyrank_demo/3** — a real post with its permalink.
+Mastodon works identically via `{"adapter":"mastodon"}`.
 
 ---
 
 ## PROBE 5 — Kill/retry mid-publish → exactly one post
 
-**Repeated publish of one slot:**
+**Repeated publish of one slot (mock target):**
 
 ```
 $ POST /slots/1/publish  ×3
@@ -98,6 +106,17 @@ $ POST /slots/1/publish  ×3
   call 2 -> reused=True   external_id=mock-mock_x-1
   call 3 -> reused=True   external_id=mock-mock_x-1
   GET /mock-posts count -> 1
+```
+
+**Repeated publish of the REAL Telegram slot from PROBE 4** (verified live — no second
+message appeared in the channel):
+
+```
+$ POST /slots/1/publish  ×3   (slot already succeeded)
+  call 1 -> reused=True  already_done=True  ext=3
+  call 2 -> reused=True  already_done=True  ext=3
+  call 3 -> reused=True  already_done=True  ext=3
+  GET /history: succeeded attempts for 1:1 = 1
 ```
 
 **Crash *after* the network send but *before* recording success** (automated in
