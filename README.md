@@ -2,6 +2,9 @@
 
 Turn **one blog post** into a **scheduled, idempotent, multi-platform social campaign**.
 
+**🔴 Live:** https://flyrank-social-studio.onrender.com  ·  publishes to Telegram
+[@my_flyrank_demo](https://t.me/my_flyrank_demo)
+
 Paste a URL or Markdown → the studio stores it once (single source of truth), generates
 a per-platform variant that is **guaranteed** to obey that platform's rules, lets a human
 approve/reject/edit, then publishes each approved variant on schedule through a pluggable
@@ -170,6 +173,17 @@ ADAPTER_OVERRIDE=telegram=mock_x
 - **No media/image generation, analytics, or thread-splitting** — explicit non-goals.
 
 See `EVIDENCE.md` for one proof per requirement and `BUILDLOG.md` for the AI-usage log.
+
+## Deployment
+
+Deployed on **Render** (free web service) at
+[flyrank-social-studio.onrender.com](https://flyrank-social-studio.onrender.com). The
+Telegram secrets are set as Render **environment variables** (never committed). `PORT` is
+supplied by Render and the server binds `0.0.0.0`.
+
+Note: the free tier has an ephemeral filesystem, so the SQLite DB resets on redeploy/restart
+(the durable scheduler still resumes correctly *within* a container's lifetime — see the
+crash-restart test). For persistence across restarts, attach a Render disk or use Postgres.
 
 ## License
 

@@ -94,6 +94,10 @@ $ GET /history
 👉 The live message: **https://t.me/my_flyrank_demo/3** — a real post with its permalink.
 Mastodon works identically via `{"adapter":"mastodon"}`.
 
+Also verified against the **deployed** service at
+`https://flyrank-social-studio.onrender.com` (full ingest → generate → approve → schedule →
+scheduler-published) → **https://t.me/my_flyrank_demo/4**.
+
 ---
 
 ## PROBE 5 — Kill/retry mid-publish → exactly one post
