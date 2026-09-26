@@ -1,14 +1,25 @@
 // Turn an incoming request into a stored-post shape. Two sources: a URL to fetch,
 // or pasted Markdown. The result is the single source of truth for all generation.
 
-function htmlToText(html) {
+interface IngestBody {
+  url?: string;
+  markdown?: string;
+  title?: string;
+}
+export interface IngestResult {
+  source_type: 'url' | 'markdown';
+  source_url: string | null;
+  title: string;
+  content_md: string;
+}
+
+function htmlToText(html: string): { title: string; content_md: string } {
   const title =
-    (html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1]) ||
-    (html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]) ||
-    (html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1]?.replace(/<[^>]+>/g, '')) ||
+    html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ||
+    html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1]?.replace(/<[^>]+>/g, '') ||
     'Untitled';
 
-  // prefer <article>, else <body>
   const bodyMatch = html.match(/<article[\s\S]*?<\/article>/i) || html.match(/<body[\s\S]*?<\/body>/i);
   const chunk = bodyMatch ? bodyMatch[0] : html;
   const text = chunk
@@ -24,23 +35,22 @@ function htmlToText(html) {
   return { title: title.trim(), content_md: text };
 }
 
-/**
- * Build a post record from the request body.
- * @param {{url?:string, markdown?:string, title?:string}} body
- * @returns {Promise<{source_type,source_url,title,content_md}>}
- */
-export async function ingestFromBody(body) {
+function httpError(message: string, status: number): Error {
+  return Object.assign(new Error(message), { status });
+}
+
+export async function ingestFromBody(body: IngestBody): Promise<IngestResult> {
   if (body?.url) {
-    let res;
+    let res: Response;
     try {
       res = await fetch(body.url, { headers: { 'User-Agent': 'social-studio/1.0' } });
     } catch (err) {
-      throw Object.assign(new Error(`could not fetch url: ${err.message}`), { status: 400 });
+      throw httpError(`could not fetch url: ${(err as Error).message}`, 400);
     }
-    if (!res.ok) throw Object.assign(new Error(`url returned ${res.status}`), { status: 400 });
+    if (!res.ok) throw httpError(`url returned ${res.status}`, 400);
     const html = await res.text();
     const { title, content_md } = htmlToText(html);
-    if (!content_md) throw Object.assign(new Error('no readable content at url'), { status: 400 });
+    if (!content_md) throw httpError('no readable content at url', 400);
     return { source_type: 'url', source_url: body.url, title: body.title || title, content_md };
   }
 
@@ -50,6 +60,5 @@ export async function ingestFromBody(body) {
     return { source_type: 'markdown', source_url: null, title: title.trim(), content_md: md };
   }
 
-  throw Object.assign(new Error('provide either { "url": "..." } or { "markdown": "...", "title": "..." }'),
-    { status: 400 });
+  throw httpError('provide either { "url": "..." } or { "markdown": "...", "title": "..." }', 400);
 }
