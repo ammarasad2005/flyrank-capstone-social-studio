@@ -1,7 +1,7 @@
 // Shared domain types.
 
 export type VariantStatus = 'draft' | 'approved' | 'rejected' | 'published';
-export type SlotStatus = 'pending' | 'publishing' | 'published' | 'failed' | 'canceled';
+export type SlotStatus = 'pending' | 'publishing' | 'published' | 'failed' | 'canceled' | 'dead_letter';
 export type AttemptStatus = 'pending' | 'in_flight' | 'succeeded' | 'failed' | 'uncertain';
 
 export interface Post {
@@ -32,6 +32,9 @@ export interface Slot {
   scheduled_at: string | Date;
   status: SlotStatus;
   claimed_at: string | Date | null;
+  attempts: number;
+  next_attempt_at: string | Date | null;
+  last_error: string | null;
   created_at: string | Date;
 }
 
