@@ -86,15 +86,25 @@ Both drivers implement one `PublishQueue` interface and funnel every slot throug
 | `inprocess` (default) | DB-backed poller, no broker | single process or a few; multi-worker-safe via `SKIP LOCKED`. Carries the test suite. |
 | `bull` | BullMQ over Redis (Upstash) | a horizontally-scaled worker fleet |
 
-Run the queue inside the web process (default, `inprocess`) or as its own scalable process:
+The web process runs whichever driver is configured **inline**, so a single-service
+deploy (e.g. Render free tier) both serves HTTP and publishes — with either driver. To
+enable `bull`, just set two env vars:
 
 ```bash
-npm run worker      # standalone worker; picks the driver from QUEUE_DRIVER
+QUEUE_DRIVER=bull
+REDIS_URL=rediss://default:<password>@<host>.upstash.io:6379   # TCP/TLS, NOT the REST URL
 ```
 
-For `bull`, set `REDIS_URL` to a **`rediss://…:6379`** TCP endpoint (the Upstash *REST*
-URL/token will not work with BullMQ/ioredis), set `QUEUE_DRIVER=bull`, and run the web
-process with `SCHEDULER_ENABLED=false` while `npm run worker` does the publishing. See
+To scale the queue **horizontally** instead, run it as its own process and take it out of
+the web process:
+
+```bash
+SCHEDULER_ENABLED=false npm start     # web dyno: HTTP only
+npm run worker                        # one or more worker dynos; picks driver from QUEUE_DRIVER
+```
+
+Note: BullMQ/ioredis need the Upstash **TCP/TLS** endpoint (`rediss://…:6379`) — the
+`@upstash/redis` *REST* URL/token will not work. See
 `docs/adr/0002-queue-driver-and-domain-retries.md`.
 
 ---
