@@ -34,6 +34,12 @@ const envSchema = z.object({
   SCHEDULER_TICK_MS: z.coerce.number().int().min(50).default(2000),
   SCHEDULER_ENABLED: bool(true),
 
+  // observability (T0-C)
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  METRICS_ENABLED: bool(true),
+  SENTRY_DSN: z.string().default(''),
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
+
   // adapters
   ADAPTER_OVERRIDE: z.string().default(''),
   TELEGRAM_BOT_TOKEN: z.string().default(''),
@@ -78,6 +84,14 @@ export const config = {
   scheduler: {
     tickMs: env.SCHEDULER_TICK_MS,
     enabled: env.SCHEDULER_ENABLED,
+  },
+  logLevel: env.LOG_LEVEL,
+  metrics: {
+    enabled: env.METRICS_ENABLED,
+  },
+  sentry: {
+    dsn: env.SENTRY_DSN,
+    tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
   },
 };
 

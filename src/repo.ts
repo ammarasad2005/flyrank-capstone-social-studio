@@ -170,6 +170,10 @@ export async function listDeadLetters(): Promise<Slot[]> {
   const { rows } = await db.query(`SELECT * FROM slots WHERE status = 'dead_letter' ORDER BY id`);
   return rows;
 }
+export async function countSlotsByStatus(status: SlotStatus): Promise<number> {
+  const { rows } = await db.query('SELECT count(*)::int AS n FROM slots WHERE status = $1', [status]);
+  return rows[0]?.n ?? 0;
+}
 
 // ── publish_attempts (history + idempotency) ───────────────────────────────────
 export async function findAttemptByKey(key: string): Promise<Attempt | null> {
