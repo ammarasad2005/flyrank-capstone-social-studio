@@ -164,15 +164,16 @@ mechanism reroutes the real Telegram target (`ADAPTER_OVERRIDE=telegram=mock_x`)
 
 ```
 $ npm test
-# tests 12
-# pass 12
+# tests 16
+# pass 16
 # fail 0
 ```
 
 Covering: blocked variant (`integration`), refused schedule (`integration`), duplicate
 publish (`integration` + `durable-restart`), adapter swap (`adapter-swap`), concurrent
 claim safety (`concurrency`), durable crash-restart for **both** an idempotent and a
-non-idempotent target (`durable-restart`), and the Sprint-2 failure paths below.
+non-idempotent target (`durable-restart`), the Sprint-2 failure paths below, and the
+Sprint-3 observability endpoints (`observability`).
 
 ---
 
@@ -192,3 +193,23 @@ exponential backoff, so `claimDueSlot()` holds the slot back until its window pa
 fires. A non-idempotent send whose outcome is unknown after a crash is dead-lettered
 immediately — it is **never** retried, so it can't double-post. The whole model runs on
 PGlite with no broker, so it's identical whether `QUEUE_DRIVER=inprocess` or `bull`.
+
+---
+
+## Sprint 3 — Observability (`tests/observability.test.ts`)
+
+```
+$ npm test  (observability)
+ok - GET /health is live and sets a request-id header on normal routes
+ok - GET /ready reports DB + queue checks (inprocess: queue ok)
+ok - GET /metrics exposes Prometheus text with our custom series
+ok - a successful publish increments publish_attempts_total{outcome="succeeded"}
+```
+
+`GET /health` is liveness; `GET /ready` checks the DB (and Redis when
+`QUEUE_DRIVER=bull`), returning `503` + a per-check breakdown otherwise. `GET /metrics`
+serves Prometheus text including `publish_attempts_total`, `publish_duration_seconds`,
+`publish_retries_total`, `publish_dead_letters_total`, `slots_pending`, and
+`http_request_duration_seconds`. Publishing a slot increments the succeeded counter for
+that adapter. Every request is logged as structured JSON with an `x-request-id`. Full
+runbook + alert rules: `docs/OBSERVABILITY.md`.

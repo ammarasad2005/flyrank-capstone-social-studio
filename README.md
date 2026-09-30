@@ -202,6 +202,27 @@ ADAPTER_OVERRIDE=telegram=mock_x
 | `POST /slots/:id/publish` | Publish now — idempotent (same path the scheduler uses) |
 | `GET /history` | Every publish attempt + result |
 | `GET /mock-posts` | What the mock adapters recorded |
+| `GET /health` · `GET /ready` | Liveness · readiness (DB + queue) |
+| `GET /metrics` | Prometheus metrics |
+
+---
+
+## Observability (T0-C)
+
+- **Structured logs** — JSON via **pino**; every request carries a generated
+  `x-request-id` (returned as a header) + `responseTime`; publish/queue events log
+  `slotId`/`adapter`/`outcome`. Level via `LOG_LEVEL` (`silent` in tests).
+- **Metrics** — Prometheus text at **`GET /metrics`**: publish success rate & adapter
+  latency per platform, retries, dead-letter arrivals, queue depth (`slots_pending`),
+  plus HTTP latency and default process metrics.
+- **Readiness** — **`GET /ready`** checks the DB and (when `QUEUE_DRIVER=bull`) Redis,
+  returning `503` with a per-check breakdown; **`GET /health`** is liveness.
+- **Error tracking** — optional **Sentry** (`SENTRY_DSN`); a safe no-op when unset.
+- **Alerting** — Prometheus/Grafana rules (success-rate drop, DLQ arrivals, queue
+  backlog, adapter/API 5xx) plus an immediate `ALERT_WEBHOOK_URL` push on dead-letter.
+
+Full details, a scrape config, and the alert rules: **`docs/OBSERVABILITY.md`**
+(design rationale in `docs/adr/0003-observability.md`).
 
 ---
 
