@@ -8,14 +8,13 @@ export const config = {
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN || '',
     chatId: process.env.TELEGRAM_CHAT_ID || '',
-    parseMode: process.env.TELEGRAM_PARSE_MODE || '', // '', 'HTML', or 'MarkdownV2'
+    parseMode: process.env.TELEGRAM_PARSE_MODE || '',
   },
   mastodon: {
     baseUrl: process.env.MASTODON_BASE_URL || '',
     accessToken: process.env.MASTODON_ACCESS_TOKEN || '',
     visibility: process.env.MASTODON_VISIBILITY || 'unlisted',
   },
-  // "mastodon=mock_x" reroutes a platform to another adapter — the PROBE 6 swap.
   adapterOverride: process.env.ADAPTER_OVERRIDE || '',
   scheduler: {
     tickMs: Number(process.env.SCHEDULER_TICK_MS || 2000),

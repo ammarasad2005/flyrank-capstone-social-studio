@@ -10,8 +10,9 @@ a per-platform variant that is **guaranteed** to obey that platform's rules, let
 approve/reject/edit, then publishes each approved variant on schedule through a pluggable
 adapter — **exactly once**, even under retries and worker crashes.
 
-FlyRank backend capstone. JavaScript / Node.js · Express · SQLite. No Docker, no Redis —
-`npm install && npm start` and it runs.
+FlyRank backend capstone. **TypeScript** / Node.js · Express · **Postgres**. Zero-setup
+locally: `npm install && npm start` runs an in-process Postgres (PGlite) — no Docker, no
+external DB. Point `DATABASE_URL` at a managed Postgres (Neon/Supabase/RDS) for production.
 
 **Real target: Telegram** (free Bot API, real message + link). **Mastodon** is included as a
 second real adapter. **X** and **LinkedIn** are mocks (no free write APIs). Swapping any of
@@ -89,7 +90,7 @@ A single in-process worker (`src/scheduler.js`) ticks every `SCHEDULER_TICK_MS`:
                  publish_attempts  ◀── history + idempotency ledger
 ```
 
-Data model (SQLite, `src/db.js`): `posts` · `variants` · `slots` · `publish_attempts`
+Data model (Postgres, `migrations/001_init.sql`): `posts` · `variants` · `slots` · `publish_attempts`
 (UNIQUE `idempotency_key`) · `mock_posts` (UNIQUE `idempotency_key`).
 
 ---
@@ -160,8 +161,9 @@ ADAPTER_OVERRIDE=telegram=mock_x
 
 ## Limitations (honest)
 
-- **Single-node scheduler.** Correctness relies on SQLite's atomic claim, which is fine for
-  one process. Horizontal scaling would need Postgres row locks or an external queue.
+- **Scheduler is DB-backed.** The claim uses Postgres `FOR UPDATE SKIP LOCKED`, so multiple
+  workers can run without double-publishing. A dedicated job engine (BullMQ/Inngest) with
+  backoff + dead-letter is the next step (see `docs/WORKPLAN.md`, Tier 0-B).
 - **Variant text is templated by default.** Optional Gemini generation (`USE_AI=true`) exists,
   but the *graded* behaviour is enforcement, not authorship — a weak AI variant is still
   blocked if it breaks a rule.
@@ -181,9 +183,10 @@ Deployed on **Render** (free web service) at
 Telegram secrets are set as Render **environment variables** (never committed). `PORT` is
 supplied by Render and the server binds `0.0.0.0`.
 
-Note: the free tier has an ephemeral filesystem, so the SQLite DB resets on redeploy/restart
-(the durable scheduler still resumes correctly *within* a container's lifetime — see the
-crash-restart test). For persistence across restarts, attach a Render disk or use Postgres.
+Note: with the default PGlite store on Render's ephemeral filesystem the DB resets on
+redeploy/restart (the durable scheduler still resumes correctly *within* a container's
+lifetime — see the crash-restart test). For persistence across restarts, set `DATABASE_URL`
+to a managed Postgres (Neon/Supabase).
 
 ## License
 

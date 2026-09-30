@@ -1,14 +1,15 @@
 import { MastodonPublisher } from './mastodon.js';
 import { TelegramPublisher } from './telegram.js';
 import { MockXPublisher, MockLinkedInPublisher } from './mock.js';
+import { SocialPublisher } from './base.js';
 import { config } from '../config.js';
 
 /**
- * The adapter registry. Which adapters exist and how they map to platform ids is the
- * ONLY thing that changes to swap a target. PROBE 6 — "point mastodon at a mock" — is
- * done purely with the ADAPTER_OVERRIDE env var; no business logic is touched.
+ * The adapter registry. Which adapters exist + how they map to platform ids is the only
+ * thing that changes to swap a target. ADAPTER_OVERRIDE reroutes a platform to another
+ * adapter (PROBE 6) with zero business-logic change.
  */
-const builders = {
+const builders: Record<string, () => SocialPublisher> = {
   telegram: () => new TelegramPublisher({
     botToken: config.telegram.botToken,
     chatId: config.telegram.chatId,
@@ -23,26 +24,25 @@ const builders = {
   mock_linkedin: () => new MockLinkedInPublisher(),
 };
 
-// ADAPTER_OVERRIDE="mastodon=mock_x,other=..." reroutes a platform to another adapter.
 const overrides = parseOverrides(config.adapterOverride);
+const cache = new Map<string, SocialPublisher>();
 
-const cache = new Map();
-
-export function getAdapter(platformId) {
+export function getAdapter(platformId: string): SocialPublisher {
   const target = overrides[platformId] ?? platformId;
-  if (!builders[target]) {
+  const build = builders[target];
+  if (!build) {
     throw new Error(`no adapter registered for "${target}" (known: ${Object.keys(builders).join(', ')})`);
   }
-  if (!cache.has(target)) cache.set(target, builders[target]());
-  return cache.get(target);
+  if (!cache.has(target)) cache.set(target, build());
+  return cache.get(target)!;
 }
 
-export function knownAdapters() {
+export function knownAdapters(): string[] {
   return Object.keys(builders);
 }
 
-function parseOverrides(spec) {
-  const out = {};
+function parseOverrides(spec: string): Record<string, string> {
+  const out: Record<string, string> = {};
   if (!spec) return out;
   for (const pair of spec.split(',')) {
     const [from, to] = pair.split('=').map((s) => s.trim());
