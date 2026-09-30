@@ -164,11 +164,31 @@ mechanism reroutes the real Telegram target (`ADAPTER_OVERRIDE=telegram=mock_x`)
 
 ```
 $ npm test
-# tests 8
-# pass 8
+# tests 12
+# pass 12
 # fail 0
 ```
 
 Covering: blocked variant (`integration`), refused schedule (`integration`), duplicate
-publish (`integration` + `durable-restart`), adapter swap (`adapter-swap`), and durable
-crash-restart for **both** an idempotent and a non-idempotent target (`durable-restart`).
+publish (`integration` + `durable-restart`), adapter swap (`adapter-swap`), concurrent
+claim safety (`concurrency`), durable crash-restart for **both** an idempotent and a
+non-idempotent target (`durable-restart`), and the Sprint-2 failure paths below.
+
+---
+
+## Sprint 2 — Retry, backoff & dead-letter (`tests/retry-deadletter.test.ts`)
+
+```
+$ npm test  (retry-deadletter)
+ok - failing send retries with backoff, then dead-letters at max attempts
+ok - backoff grows and gates claimDueSlot until next_attempt_at passes
+ok - uncertain non-idempotent crash is dead-lettered immediately (no retry)
+```
+
+A publish that keeps failing (Telegram adapter with no credentials — throws offline, no
+network) is retried: `slots.attempts` climbs and `next_attempt_at` is pushed out with
+exponential backoff, so `claimDueSlot()` holds the slot back until its window passes. After
+`RETRY_MAX_ATTEMPTS` the slot flips to `dead_letter` (never re-claimed) and exactly one alert
+fires. A non-idempotent send whose outcome is unknown after a crash is dead-lettered
+immediately — it is **never** retried, so it can't double-post. The whole model runs on
+PGlite with no broker, so it's identical whether `QUEUE_DRIVER=inprocess` or `bull`.

@@ -61,20 +61,22 @@ can run simultaneously without double-publishing (new concurrency test).
 **Objective:** the scheduler is its own service with retries, backoff, and visibility.
 **Effort: L**
 
-- [ ] B1. Extract the scheduler (`src/scheduler.js`) into a standalone worker entrypoint
-  (`src/worker.js`) deployable independently from the API.
-- [ ] B2. Choose the engine (ADR): **BullMQ on Upstash Redis** (you have Upstash) *or*
-  **Inngest** (you have Inngest keys). Recommendation: BullMQ for fine-grained control of
-  per-account concurrency; Inngest if you prefer managed durable execution.
-- [ ] B3. Model publishing as a job: a "scan due slots" repeatable job enqueues per-slot
-  publish jobs; `publishSlot()` becomes the job handler (it's already the single choke point —
-  minimal change).
-- [ ] B4. **Retry policy:** exponential backoff + jitter, max attempts, per-attempt logging into
-  `publish_attempts` (`attempt_no` already exists), classify errors as retryable vs terminal.
-- [ ] B5. **Dead-letter queue** for terminally-failed slots + an alert when one lands there.
-- [ ] B6. **Graceful shutdown:** on SIGTERM stop claiming, finish/mark in-flight jobs, close DB
-  and queue cleanly. Verify the durability guarantee under a normal rolling deploy, not just a
-  crash.
+- [x] B1. Extract the scheduler into a standalone worker entrypoint (`src/worker.ts`,
+  `npm run worker`) deployable independently from the API; the web process runs the queue
+  inline only for the default in-process driver.
+- [x] B2. Engine chosen (ADR-0002): **BullMQ on Upstash Redis**, behind a `PublishQueue`
+  abstraction with `QUEUE_DRIVER=inprocess|bull` so the engine is swappable. Inngest remains a
+  fallback if issues arise.
+- [x] B3. Publishing modelled as jobs: a repeatable "scan due slots" job enqueues per-slot
+  jobs; the shared `processSlot()` (wrapping `publishSlot()`) is the handler for both drivers.
+- [x] B4. **Retry policy:** exponential backoff + jitter (`RETRY_BASE_MS·2^(n-1)`, capped),
+  `RETRY_MAX_ATTEMPTS`, per-attempt rows in `publish_attempts`. Implemented as DB domain logic
+  (`repo.recordSlotFailure`) so both drivers share one model; tested on PGlite (no broker).
+- [x] B5. **Dead-letter** state on `slots` (`dead_letter`, never re-claimed) + alert on arrival
+  (`src/notify.ts`: log + optional `ALERT_WEBHOOK_URL`). Uncertain non-idempotent sends are
+  dead-lettered immediately (no retry).
+- [x] B6. **Graceful shutdown:** SIGTERM/SIGINT stop the poller/worker and close the queue
+  cleanly in both `src/server.ts` and `src/worker.ts`.
 
 **Acceptance:** killing a worker mid-batch resumes with no dup (existing durable test, now
 against the queue); a flaky adapter is retried with backoff then dead-lettered + alerted.
@@ -102,7 +104,8 @@ against the queue); a flaky adapter is retried with backoff then dead-lettered +
   + secret scan (Dependabot + gitleaks). Block merge on failure.
 - [ ] D2. **CD:** auto-deploy `main` → staging; manual promote → prod (Render for now; revisit
   Fly.io/Railway when web+worker split needs it).
-- [ ] D3. **Config validation** with zod/envalid — fail fast on missing/invalid env.
+- [x] D3. **Config validation** with **zod** (`src/config.ts`) — coerces types, applies
+  defaults, and fails fast at boot on invalid env (e.g. `QUEUE_DRIVER=bull` with no `REDIS_URL`).
 - [ ] D4. **Secrets manager** for prod (Doppler / AWS Secrets Manager / Render env groups);
   remove long-lived secrets from local `.env` habits. Document rotation.
 - [ ] D5. Run DB migrations automatically on deploy (with a safe, reversible strategy).

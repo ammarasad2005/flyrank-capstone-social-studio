@@ -54,12 +54,48 @@ risk a double-post, an ambiguous in-flight send is flagged for review instead of
 
 ### Durable scheduling
 
-A single in-process worker (`src/scheduler.js`) ticks every `SCHEDULER_TICK_MS`:
+A queue driver (`src/queue/`) ticks every `SCHEDULER_TICK_MS`:
 
-- **Claim** is an atomic `UPDATE slots SET status='publishing' WHERE status='pending'` — two
-  workers can never grab the same slot.
+- **Claim** is an atomic `UPDATE slots SET status='publishing' WHERE status='pending'`
+  guarded by `FOR UPDATE SKIP LOCKED` — two workers can never grab the same slot.
 - On **startup** it reclaims any slot left in `publishing` by a crashed run and re-publishes
   it (safe, because `publishSlot` is idempotent).
+
+### Retries, backoff & dead-letter (Sprint 2)
+
+When a publish fails, `processSlot()` decides what happens next — and that decision lives in
+the **database**, so it's identical across queue drivers and testable with no broker:
+
+- **Retry with backoff.** `slots.attempts` is bumped and `next_attempt_at` is set to
+  `now() + RETRY_BASE_MS · 2^(attempt-1)` (+ jitter, capped). `claimDueSlot()` filters on
+  `next_attempt_at`, so a slot is simply not re-claimed until its backoff window passes.
+- **Dead-letter.** After `RETRY_MAX_ATTEMPTS` failures the slot moves to `dead_letter`
+  (queryable, never re-claimed) and an alert fires (log, plus an optional
+  `ALERT_WEBHOOK_URL` POST).
+- **Uncertain sends are never retried.** If a non-idempotent target (Telegram) crashed
+  mid-send, the outcome is unknown, so the slot is dead-lettered immediately rather than
+  risk a duplicate.
+
+### Queue drivers (swap the engine, keep the semantics)
+
+Both drivers implement one `PublishQueue` interface and funnel every slot through the same
+`processSlot()`, so publish behaviour never changes with the engine:
+
+| `QUEUE_DRIVER` | Engine | Use |
+| --- | --- | --- |
+| `inprocess` (default) | DB-backed poller, no broker | single process or a few; multi-worker-safe via `SKIP LOCKED`. Carries the test suite. |
+| `bull` | BullMQ over Redis (Upstash) | a horizontally-scaled worker fleet |
+
+Run the queue inside the web process (default, `inprocess`) or as its own scalable process:
+
+```bash
+npm run worker      # standalone worker; picks the driver from QUEUE_DRIVER
+```
+
+For `bull`, set `REDIS_URL` to a **`rediss://…:6379`** TCP endpoint (the Upstash *REST*
+URL/token will not work with BullMQ/ioredis), set `QUEUE_DRIVER=bull`, and run the web
+process with `SCHEDULER_ENABLED=false` while `npm run worker` does the publishing. See
+`docs/adr/0002-queue-driver-and-domain-retries.md`.
 
 ---
 
@@ -78,7 +114,7 @@ A single in-process worker (`src/scheduler.js`) ticks every `SCHEDULER_TICK_MS`:
                  ┌──────────────┐
                  │    slots     │  (approved variant + when + which adapter)
                  └──────────────┘
-                        │  scheduler.js claims due slots (atomic)
+                        │  queue driver claims due slots (atomic)
                         ▼
                  ┌──────────────┐        ┌─────────────────────────────┐
                  │ publishSlot  │───────▶│ getAdapter(id)              │
@@ -162,8 +198,9 @@ ADAPTER_OVERRIDE=telegram=mock_x
 ## Limitations (honest)
 
 - **Scheduler is DB-backed.** The claim uses Postgres `FOR UPDATE SKIP LOCKED`, so multiple
-  workers can run without double-publishing. A dedicated job engine (BullMQ/Inngest) with
-  backoff + dead-letter is the next step (see `docs/WORKPLAN.md`, Tier 0-B).
+  workers can run without double-publishing. A dedicated job engine (**BullMQ** over Redis)
+  is now available behind `QUEUE_DRIVER=bull`, and retry/backoff/dead-letter is implemented
+  as DB domain logic shared by both drivers (Tier 0-B, see `docs/WORKPLAN.md`).
 - **Variant text is templated by default.** Optional Gemini generation (`USE_AI=true`) exists,
   but the *graded* behaviour is enforcement, not authorship — a weak AI variant is still
   blocked if it breaks a rule.
