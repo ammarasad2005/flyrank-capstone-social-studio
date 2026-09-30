@@ -3,6 +3,7 @@ import {
   getSlot, getVariant, getPost, setSlotStatus, updateVariant,
   findAttemptByKey, insertPendingAttempt, markAttemptInFlight, finishAttempt,
 } from './repo.js';
+import { publishAttempts, publishDuration } from './observability/metrics.js';
 import type { Attempt, PublishResult } from './types.js';
 
 export interface PublishOutcome {
@@ -32,6 +33,7 @@ export async function publishSlot(slotId: number): Promise<PublishOutcome> {
   if (attempt?.status === 'succeeded') {
     await setSlotStatus(slot.id, 'published');
     await updateVariant(slot.variant_id, { status: 'published' });
+    publishAttempts.inc({ adapter: slot.adapter, outcome: 'reused' });
     return { reused: true, alreadyDone: true, attempt };
   }
 
@@ -57,6 +59,7 @@ export async function publishSlot(slotId: number): Promise<PublishOutcome> {
     if (attempt.status === 'succeeded') {
       await setSlotStatus(slot.id, 'published');
       await updateVariant(slot.variant_id, { status: 'published' });
+      publishAttempts.inc({ adapter: slot.adapter, outcome: 'reused' });
       return { reused: true, alreadyDone: true, attempt };
     }
   }
@@ -64,6 +67,7 @@ export async function publishSlot(slotId: number): Promise<PublishOutcome> {
   // Mark in-flight BEFORE the network call so a crash is recoverable/detectable.
   await markAttemptInFlight(attempt.id);
 
+  const stopTimer = publishDuration.startTimer({ adapter: slot.adapter });
   try {
     const result = await adapter.publish({ idempotencyKey: key, variant, post: post ?? undefined });
     const done = await finishAttempt(attempt.id, {
@@ -74,10 +78,14 @@ export async function publishSlot(slotId: number): Promise<PublishOutcome> {
     });
     await updateVariant(slot.variant_id, { status: 'published' });
     await setSlotStatus(slot.id, 'published');
+    stopTimer({ outcome: 'succeeded' });
+    publishAttempts.inc({ adapter: slot.adapter, outcome: 'succeeded' });
     return { reused: !!result.reused, alreadyDone: false, attempt: done, result };
   } catch (err) {
     // Record the failed attempt for history, then RETHROW. Slot state (retry vs
     // dead-letter) is decided by processSlot() so both queue drivers share one model.
+    stopTimer({ outcome: 'failed' });
+    publishAttempts.inc({ adapter: slot.adapter, outcome: 'failed' });
     const done = await finishAttempt(attempt.id, { status: 'failed', error: String((err as Error)?.message ?? err) });
     throw Object.assign(err as Error, { attempt: done });
   }

@@ -3,6 +3,7 @@ import IORedis from 'ioredis';
 import { claimDueSlot, reclaimStuckSlots, setSlotStatus } from '../repo.js';
 import { processSlot } from '../process-slot.js';
 import { config } from '../config.js';
+import { logger } from '../observability/logger.js';
 import type { PublishQueue } from './types.js';
 
 const QUEUE_NAME = 'flyrank-publish';
@@ -15,17 +16,15 @@ const QUEUE_NAME = 'flyrank-publish';
  * stay in the DB (see repo.recordSlotFailure) rather than using Bull-native retries,
  * so both drivers behave identically and the model is testable without a broker.
  *
- * Not exercised in CI (no Redis in the sandbox); validated by typecheck. Prod stays
- * on QUEUE_DRIVER=inprocess until a rediss:// endpoint is wired in.
+ * Validated end-to-end against Upstash Redis; CI runs the in-process driver (no broker
+ * in the sandbox). Enabled in prod via QUEUE_DRIVER=bull + REDIS_URL.
  */
 export class BullQueue implements PublishQueue {
   private connection: IORedis;
   private queue: Queue;
   private worker: Worker | null = null;
-  private log: Console;
 
-  constructor(opts: { log?: Console } = {}) {
-    this.log = opts.log ?? console;
+  constructor() {
     // BullMQ requires maxRetriesPerRequest: null on the shared connection.
     this.connection = new IORedis(config.queue.redisUrl, { maxRetriesPerRequest: null });
     this.queue = new Queue(QUEUE_NAME, { connection: this.connection });
@@ -35,7 +34,7 @@ export class BullQueue implements PublishQueue {
     // requeue crash-orphaned work, same as the in-process driver
     const stuck = await reclaimStuckSlots();
     for (const s of stuck) {
-      this.log.log(`bull: reclaiming stuck slot ${s.id} (was 'publishing')`);
+      logger.info({ slotId: s.id }, "bull: reclaiming stuck slot (was 'publishing')");
       await setSlotStatus(s.id, 'pending');
     }
 
@@ -43,7 +42,7 @@ export class BullQueue implements PublishQueue {
       connection: this.connection,
       concurrency: 4,
     });
-    this.worker.on('failed', (job, err) => this.log.error(`bull: job ${job?.id} failed: ${err?.message}`));
+    this.worker.on('failed', (job, err) => logger.error({ jobId: job?.id, err }, 'bull: job failed'));
 
     // one repeatable "scan" tick; the scheduler id keeps it a singleton across restarts
     await this.queue.upsertJobScheduler(
@@ -51,7 +50,7 @@ export class BullQueue implements PublishQueue {
       { every: config.scheduler.tickMs },
       { name: 'scan', data: {}, opts: { removeOnComplete: true, removeOnFail: true } },
     );
-    this.log.log(`bull queue: started, scan every ${config.scheduler.tickMs}ms`);
+    logger.info({ tickMs: config.scheduler.tickMs }, 'bull queue started');
   }
 
   private async process(job: Job): Promise<void> {
@@ -65,8 +64,8 @@ export class BullQueue implements PublishQueue {
       return;
     }
     if (job.name === 'slot') {
-      const res = await processSlot(job.data.slotId, this.log);
-      this.log.log(`bull: slot ${job.data.slotId} -> ${res.outcome}${res.reason ? ' (' + res.reason + ')' : ''}`);
+      const res = await processSlot(job.data.slotId);
+      logger.info({ slotId: job.data.slotId, outcome: res.outcome, reason: res.reason }, 'bull: slot processed');
     }
   }
 
