@@ -36,12 +36,13 @@ export async function publishSlot(slotId: number): Promise<PublishOutcome> {
   }
 
   // Crash recovery for a send that was already issued to a non-idempotent target.
+  // We CANNOT know if it landed, so retrying could double-post. Record the
+  // ambiguity and hand back 'uncertain' — the caller dead-letters it (no retry).
   if (attempt?.status === 'in_flight' && !adapter.idempotent) {
     const done = await finishAttempt(attempt.id, {
       status: 'uncertain',
       error: 'crashed during a non-idempotent send; not retried to avoid a duplicate',
     });
-    await setSlotStatus(slot.id, 'failed');
     return { skipped: true, reason: 'uncertain', attempt: done };
   }
 
@@ -75,8 +76,9 @@ export async function publishSlot(slotId: number): Promise<PublishOutcome> {
     await setSlotStatus(slot.id, 'published');
     return { reused: !!result.reused, alreadyDone: false, attempt: done, result };
   } catch (err) {
+    // Record the failed attempt for history, then RETHROW. Slot state (retry vs
+    // dead-letter) is decided by processSlot() so both queue drivers share one model.
     const done = await finishAttempt(attempt.id, { status: 'failed', error: String((err as Error)?.message ?? err) });
-    await setSlotStatus(slot.id, 'failed');
     throw Object.assign(err as Error, { attempt: done });
   }
 }

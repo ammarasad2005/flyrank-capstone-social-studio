@@ -1,6 +1,7 @@
 // Data access. All async now (Postgres). The SQL is the same story as the SQLite
 // version, but the claim uses FOR UPDATE SKIP LOCKED so multiple workers are safe.
 import { db } from './db.js';
+import { backoffMs } from './retry.js';
 import type { Post, Variant, Slot, Attempt, MockPost, VariantStatus, SlotStatus } from './types.js';
 
 // ── posts ───────────────────────────────────────────────────────────────────
@@ -92,6 +93,7 @@ export async function claimDueSlot(): Promise<Slot | null> {
          JOIN variants v ON v.id = s.variant_id
         WHERE s.status = 'pending'
           AND s.scheduled_at <= now()
+          AND (s.next_attempt_at IS NULL OR s.next_attempt_at <= now())
           AND v.status IN ('approved','published')
         ORDER BY s.scheduled_at
         FOR UPDATE OF s SKIP LOCKED
@@ -116,6 +118,57 @@ export async function reclaimStuckSlots(): Promise<Slot[]> {
 export async function setSlotStatus(id: number, status: SlotStatus): Promise<Slot | null> {
   await db.query('UPDATE slots SET status = $1 WHERE id = $2', [status, id]);
   return getSlot(id);
+}
+
+// ── retry / dead-letter (T0-B) ─────────────────────────────────────────────────
+// A slot's publish threw. Bump attempts and decide: reschedule with backoff, or
+// give up and dead-letter. This is DB-owned domain logic (engine-agnostic) so the
+// in-process and Bull drivers share exactly one retry model and it's testable on
+// PGlite without any broker.
+export async function recordSlotFailure(
+  id: number,
+  opts: { maxAttempts: number; baseMs: number; error: string },
+): Promise<{ deadLettered: boolean; slot: Slot }> {
+  return db.withTx(async (q) => {
+    const cur = (await q('SELECT * FROM slots WHERE id = $1 FOR UPDATE', [id])).rows[0];
+    if (!cur) throw new Error(`slot ${id} not found`);
+    const attempts = (cur.attempts ?? 0) + 1;
+    if (attempts >= opts.maxAttempts) {
+      const { rows } = await q(
+        `UPDATE slots SET status = 'dead_letter', attempts = $2, last_error = $3,
+                          claimed_at = NULL, next_attempt_at = NULL
+          WHERE id = $1 RETURNING *`,
+        [id, attempts, opts.error],
+      );
+      return { deadLettered: true, slot: rows[0] };
+    }
+    const delay = backoffMs(attempts, opts.baseMs);
+    const { rows } = await q(
+      `UPDATE slots SET status = 'pending', attempts = $2, last_error = $3,
+                        claimed_at = NULL,
+                        next_attempt_at = now() + ($4 || ' milliseconds')::interval
+        WHERE id = $1 RETURNING *`,
+      [id, attempts, opts.error, String(delay)],
+    );
+    return { deadLettered: false, slot: rows[0] };
+  });
+}
+
+// Give up on a slot immediately (no more retries) — used for at-most-once adapters
+// whose send outcome is unknown, where retrying could double-post.
+export async function deadLetterSlot(id: number, error: string): Promise<Slot> {
+  const { rows } = await db.query(
+    `UPDATE slots SET status = 'dead_letter', last_error = $2, claimed_at = NULL,
+                      next_attempt_at = NULL, attempts = attempts + 1
+      WHERE id = $1 RETURNING *`,
+    [id, error],
+  );
+  return rows[0];
+}
+
+export async function listDeadLetters(): Promise<Slot[]> {
+  const { rows } = await db.query(`SELECT * FROM slots WHERE status = 'dead_letter' ORDER BY id`);
+  return rows;
 }
 
 // ── publish_attempts (history + idempotency) ───────────────────────────────────

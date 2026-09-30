@@ -1,24 +1,83 @@
+import { z } from 'zod';
 import { knownPlatforms } from './generator.js';
 
+// ── env schema (T0-D) ──────────────────────────────────────────────────────────
+// One validated boundary between the environment and the app. A bad/typo'd value
+// fails fast at boot with a readable message instead of surfacing as a weird bug
+// three layers deep. zod does the coercion so the rest of the code sees real types.
+const bool = (dflt: boolean) =>
+  z
+    .string()
+    .optional()
+    .transform((v) => (v == null || v === '' ? dflt : !['false', '0', 'no', 'off'].includes(v.toLowerCase())));
+
+const csv = z
+  .string()
+  .default('telegram,mock_x,mock_linkedin')
+  .transform((v) => v.split(',').map((s) => s.trim()).filter(Boolean));
+
+const envSchema = z.object({
+  PORT: z.coerce.number().int().positive().default(3000),
+  PLATFORMS: csv,
+  USE_AI: bool(false),
+
+  // queue engine
+  QUEUE_DRIVER: z.enum(['inprocess', 'bull']).default('inprocess'),
+  REDIS_URL: z.string().default(''),
+
+  // retry / backoff / dead-letter
+  RETRY_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5),
+  RETRY_BASE_MS: z.coerce.number().int().min(1).default(5000),
+  ALERT_WEBHOOK_URL: z.string().default(''),
+
+  // scheduler (in-process poller)
+  SCHEDULER_TICK_MS: z.coerce.number().int().min(50).default(2000),
+  SCHEDULER_ENABLED: bool(true),
+
+  // adapters
+  ADAPTER_OVERRIDE: z.string().default(''),
+  TELEGRAM_BOT_TOKEN: z.string().default(''),
+  TELEGRAM_CHAT_ID: z.string().default(''),
+  TELEGRAM_PARSE_MODE: z.string().default(''),
+  MASTODON_BASE_URL: z.string().default(''),
+  MASTODON_ACCESS_TOKEN: z.string().default(''),
+  MASTODON_VISIBILITY: z.string().default('unlisted'),
+});
+
+const parsed = envSchema.safeParse(process.env);
+if (!parsed.success) {
+  const issues = parsed.error.issues.map((i) => `  • ${i.path.join('.') || '(root)'}: ${i.message}`).join('\n');
+  throw new Error(`Invalid environment configuration:\n${issues}`);
+}
+const env = parsed.data;
+
 export const config = {
-  port: Number(process.env.PORT || 3000),
-  platforms: (process.env.PLATFORMS || 'telegram,mock_x,mock_linkedin')
-    .split(',').map((s) => s.trim()).filter(Boolean),
-  useAI: String(process.env.USE_AI).toLowerCase() === 'true',
+  port: env.PORT,
+  platforms: env.PLATFORMS,
+  useAI: env.USE_AI,
+  queue: {
+    driver: env.QUEUE_DRIVER,
+    redisUrl: env.REDIS_URL,
+  },
+  retry: {
+    maxAttempts: env.RETRY_MAX_ATTEMPTS,
+    baseMs: env.RETRY_BASE_MS,
+  },
+  alertWebhookUrl: env.ALERT_WEBHOOK_URL,
   telegram: {
-    botToken: process.env.TELEGRAM_BOT_TOKEN || '',
-    chatId: process.env.TELEGRAM_CHAT_ID || '',
-    parseMode: process.env.TELEGRAM_PARSE_MODE || '',
+    botToken: env.TELEGRAM_BOT_TOKEN,
+    chatId: env.TELEGRAM_CHAT_ID,
+    parseMode: env.TELEGRAM_PARSE_MODE,
   },
   mastodon: {
-    baseUrl: process.env.MASTODON_BASE_URL || '',
-    accessToken: process.env.MASTODON_ACCESS_TOKEN || '',
-    visibility: process.env.MASTODON_VISIBILITY || 'unlisted',
+    baseUrl: env.MASTODON_BASE_URL,
+    accessToken: env.MASTODON_ACCESS_TOKEN,
+    visibility: env.MASTODON_VISIBILITY,
   },
-  adapterOverride: process.env.ADAPTER_OVERRIDE || '',
+  adapterOverride: env.ADAPTER_OVERRIDE,
   scheduler: {
-    tickMs: Number(process.env.SCHEDULER_TICK_MS || 2000),
-    enabled: String(process.env.SCHEDULER_ENABLED ?? 'true').toLowerCase() !== 'false',
+    tickMs: env.SCHEDULER_TICK_MS,
+    enabled: env.SCHEDULER_ENABLED,
   },
 };
 
@@ -28,4 +87,9 @@ for (const p of config.platforms) {
   if (!known.has(p)) {
     throw new Error(`PLATFORMS contains unknown platform "${p}". Known: ${[...known].join(', ')}`);
   }
+}
+
+// bull needs a Redis endpoint — catch the misconfig at boot, not on first job.
+if (config.queue.driver === 'bull' && !config.queue.redisUrl) {
+  throw new Error('QUEUE_DRIVER=bull requires REDIS_URL (a rediss://… TCP endpoint).');
 }
