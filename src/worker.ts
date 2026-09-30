@@ -2,11 +2,18 @@
 // can scale workers independently of the web process:
 //   QUEUE_DRIVER=inprocess node --import tsx src/worker.ts   (poller, no broker)
 //   QUEUE_DRIVER=bull       node --import tsx src/worker.ts   (Redis-backed fleet)
+import { initSentry } from './observability/sentry.js';
+initSentry();
+
 import { config } from './config.js';
 import { createQueue } from './queue/index.js';
+import { logger } from './observability/logger.js';
 
 async function main(): Promise<void> {
-  console.log(`worker: starting (driver=${config.queue.driver}, retry max=${config.retry.maxAttempts} base=${config.retry.baseMs}ms)`);
+  logger.info(
+    { driver: config.queue.driver, retryMax: config.retry.maxAttempts, retryBaseMs: config.retry.baseMs },
+    'worker starting',
+  );
   const queue = await createQueue();
   await queue.start();
 
@@ -14,7 +21,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     if (stopping) return;
     stopping = true;
-    console.log(`\nworker: ${signal} received — draining and stopping`);
+    logger.info({ signal }, 'worker draining and stopping');
     try {
       await queue.stop();
     } finally {
@@ -26,6 +33,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error('worker: fatal', err);
+  logger.error({ err }, 'worker fatal');
   process.exit(1);
 });

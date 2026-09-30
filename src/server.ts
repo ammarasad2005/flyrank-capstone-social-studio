@@ -1,6 +1,10 @@
+import { initSentry } from './observability/sentry.js';
+initSentry(); // before anything else, so early errors are captured
+
 import { createApp } from './app.js';
 import { config } from './config.js';
 import { createQueue } from './queue/index.js';
+import { logger } from './observability/logger.js';
 import type { PublishQueue } from './queue/types.js';
 
 const app = createApp();
@@ -12,27 +16,28 @@ const app = createApp();
 let queue: PublishQueue | null = null;
 
 const server = app.listen(config.port, '0.0.0.0', async () => {
-  console.log(`social-media-studio listening on http://0.0.0.0:${config.port}`);
-  console.log(`platforms: ${config.platforms.join(', ')} | AI: ${config.useAI} | queue: ${config.queue.driver}`);
+  logger.info(
+    { port: config.port, platforms: config.platforms, ai: config.useAI, queue: config.queue.driver },
+    'social-media-studio listening',
+  );
   if (!config.scheduler.enabled) {
-    console.log('queue: disabled (SCHEDULER_ENABLED=false) — run publishing via `npm run worker`');
+    logger.info('queue disabled (SCHEDULER_ENABLED=false) — run publishing via `npm run worker`');
     return;
   }
   try {
     queue = await createQueue();
     await queue.start();
   } catch (err) {
-    console.error(`queue: failed to start (${config.queue.driver}):`, (err as Error)?.message ?? err);
+    logger.error({ err, driver: config.queue.driver }, 'queue failed to start');
   }
 });
 
 // Graceful shutdown: stop accepting connections, let in-flight work settle.
 function shutdown(signal: string) {
-  console.log(`\n${signal} received — shutting down gracefully`);
+  logger.info({ signal }, 'shutting down gracefully');
   void queue?.stop();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 10_000).unref();
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
-

@@ -85,14 +85,25 @@ against the queue); a flaky adapter is retried with backoff then dead-lettered +
 ## Epic T0-C — Observability & operability
 **Objective:** you can see, debug, and alert on the system. **Effort: M**
 
-- [ ] C1. Structured logging with **pino** (request ids, slot/variant ids, org id later).
-- [ ] C2. **Sentry** for error tracking in API + worker.
-- [ ] C3. Metrics via **OpenTelemetry → Prometheus/Grafana** (or Grafana Cloud / Better Stack):
-  publish success rate, queue depth, adapter latency + error rate per platform, scheduler lag.
-- [ ] C4. Tracing across web → queue → worker → adapter.
-- [ ] C5. `/health` (liveness) + `/ready` (readiness: DB + queue reachable) endpoints; wire to
-  the deploy platform.
-- [ ] C6. Alerting rules: publish success-rate drop, queue backlog, DLQ arrivals, adapter 5xx spike.
+- [x] C1. Structured logging with **pino** (`src/observability/logger.ts`): JSON logs, a
+  generated/propagated `x-request-id` per request (pino-http), and slot/adapter/outcome on
+  publish events. `org id` deferred to T1.
+- [x] C2. **Sentry** error tracking (`src/observability/sentry.ts`), wired into the Express
+  error handler and processSlot() dead-letters. Optional: active only when `SENTRY_DSN` is set
+  (safe no-op otherwise), so it runs in API and worker alike.
+- [x] C3. Metrics via **prom-client** at `GET /metrics` (Prometheus text; scrapeable by
+  Grafana Cloud / Better Stack): publish success rate & outcome, adapter latency
+  (`publish_duration_seconds`), retries, dead-letter arrivals, queue depth (`slots_pending`),
+  HTTP latency. (Chose a self-contained /metrics endpoint over a full OTel collector to fit the
+  free tier — see ADR-0003.)
+- [~] C4. Partial: a request id is generated at the edge, returned in `x-request-id`, and
+  attached to every request log for web-side correlation. Full OpenTelemetry spans across the
+  queue hop are the remaining productionization step (ADR-0003).
+- [x] C5. `/health` (liveness) + `/ready` (readiness: DB always, Redis when QUEUE_DRIVER=bull)
+  returning 503 + a per-check breakdown; documented for the deploy platform.
+- [x] C6. Alerting rules authored (`docs/OBSERVABILITY.md`): publish success-rate drop, DLQ
+  arrivals, queue backlog, adapter/API 5xx spike — plus an immediate `ALERT_WEBHOOK_URL` push on
+  dead-letter. (Loading them into a hosted dashboard is a deploy-time step.)
 
 **Acceptance:** a forced adapter failure shows up in Sentry + a dashboard + an alert.
 **Depends on:** T0-A (ids), T0-B (queue metrics).

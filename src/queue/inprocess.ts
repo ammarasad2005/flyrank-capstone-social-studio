@@ -1,6 +1,7 @@
 import { claimDueSlot, reclaimStuckSlots, setSlotStatus } from '../repo.js';
 import { processSlot } from '../process-slot.js';
 import { config } from '../config.js';
+import { logger } from '../observability/logger.js';
 import type { PublishQueue } from './types.js';
 
 /**
@@ -15,22 +16,17 @@ import type { PublishQueue } from './types.js';
 export class InProcessQueue implements PublishQueue {
   private handle: ReturnType<typeof setInterval> | null = null;
   private ticking = false;
-  private log: Console;
-
-  constructor(opts: { log?: Console } = {}) {
-    this.log = opts.log ?? console;
-  }
 
   async start(): Promise<void> {
     // recover crash-orphaned work first
     const stuck = await reclaimStuckSlots();
     for (const s of stuck) {
-      this.log.log(`inprocess: reclaiming stuck slot ${s.id} (was 'publishing')`);
+      logger.info({ slotId: s.id }, "inprocess: reclaiming stuck slot (was 'publishing')");
       await setSlotStatus(s.id, 'pending');
     }
     this.handle = setInterval(() => void this.tick(), config.scheduler.tickMs);
     this.handle.unref?.();
-    this.log.log(`inprocess queue: started, tick=${config.scheduler.tickMs}ms`);
+    logger.info({ tickMs: config.scheduler.tickMs }, 'inprocess queue started');
     await this.tick();
   }
 
@@ -40,12 +36,12 @@ export class InProcessQueue implements PublishQueue {
     try {
       let slot = await claimDueSlot();
       while (slot) {
-        const res = await processSlot(slot.id, this.log);
-        this.log.log(`inprocess: slot ${slot.id} -> ${res.outcome}${res.reason ? ' (' + res.reason + ')' : ''} via ${slot.adapter}`);
+        const res = await processSlot(slot.id);
+        logger.info({ slotId: slot.id, adapter: slot.adapter, outcome: res.outcome, reason: res.reason }, 'inprocess: slot processed');
         slot = await claimDueSlot();
       }
     } catch (err) {
-      this.log.error(`inprocess: tick error: ${(err as Error)?.message ?? err}`);
+      logger.error({ err }, 'inprocess: tick error');
     } finally {
       this.ticking = false;
     }
