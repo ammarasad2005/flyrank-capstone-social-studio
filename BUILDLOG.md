@@ -82,7 +82,15 @@ exactly the point of the seam.
 - Added a disposable PostgreSQL + Redis CI drill that hard-kills a BullMQ worker after the idempotent mock target records its post, then restarts the worker and verifies exactly one mock post and a succeeded slot. The crash failpoint is test-only; the harness refuses non-loopback DB/Redis endpoints, requires an explicit disposable-queue reset flag, and blanks external adapters and alert integrations.
 - Local lint, typecheck, the 17-test PGlite suite, audit, and actionlint pass. The disposable real-service drill is configured as a required PR CI step because the local sandbox has no PostgreSQL/Redis services.
 
+## Sprint 6 — Observability closeout (in progress)
+
+- Re-evaluated staging on 2026-10-02. It remains deferred for this solo capstone: there is no customer data, each PR now tests disposable real Postgres/Redis, and a staging copy would duplicate DB/queue state, secrets, alert routing, and compute. Render's native PR previews are Pro-only and billable; revisit before onboarding or after a production incident.
+- Added Sentry producer and consumer spans around the BullMQ hop, using W3C trace context and OpenTelemetry messaging attributes. Each job carries `sentry-trace`, `baggage`, and `traceparent`; producer/consumer logs share a trace id. A test verifies the trace survives JSON serialization. The recurring DB scan is the trace root because publishing is asynchronous from scheduling HTTP.
+- Added an offline forced-failure drill: credential-less Telegram throws before platform fetch, while PGlite, an in-memory Sentry transport, and a webhook stub verify retries, dead-letter metrics, Sentry capture, and alert payload without external network calls.
+- Added an importable Grafana reliability dashboard and setup instructions. Corrected success/error-rate PromQL for low traffic and no-traffic windows.
+- Hosted Grafana scrape/dashboard provisioning and a live external Sentry/Slack event remain unverified because no Grafana account/API access or approved live test target is available. `SENTRY_TRACES_SAMPLE_RATE` remains opt-in at 0; no production environment was changed.
+
 ## Next planned work
 
-- Sprint 6: complete trace correlation across the BullMQ hop, configure the hosted dashboard, and demonstrate a safe no-network failure → dead-letter → Sentry/Slack alert path. Staging remains deferred; the full HTTP suite against PostgreSQL is optional unless the grading rubric requires it.
-- Then start Tier 1-A: organizations, memberships, row-level data isolation, and negative cross-tenant tests before adding customer-facing auth or accounts.
+- Complete C6 once Grafana Cloud access is available: configure the hosted `/metrics` scrape, import the dashboard/alerts, and verify a live failure alert in an approved test channel.
+- The full HTTP suite against PostgreSQL remains optional unless the grading rubric requires it. Then start Tier 1-A: organizations, memberships, row-level data isolation, and negative cross-tenant tests before adding customer-facing auth or accounts.

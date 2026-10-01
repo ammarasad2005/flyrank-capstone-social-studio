@@ -263,8 +263,9 @@ migration/concurrency checks, and a BullMQ worker-crash/recovery check using dis
 and Postgres services. The recovery script refuses non-loopback endpoints and requires an
 explicit disposable-queue reset flag.
 Branch protection requires all three checks, requires PRs, and disallows admin bypass/direct
-pushes. Dependabot checks npm and GitHub Actions weekly. Staging is currently deferred; merging
-`main` deploys directly to production.
+pushes. Dependabot checks npm and GitHub Actions weekly. Staging was re-evaluated on
+2026-10-02 and remains deferred for this no-customer-data capstone; see `docs/RELEASES.md`.
+Merging `main` deploys directly to production.
 
 ## License
 
