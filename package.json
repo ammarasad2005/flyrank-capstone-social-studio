@@ -29,7 +29,7 @@
   "author": "Muhammad Ammar Asad",
   "license": "MIT",
   "dependencies": {
-    "@electric-sql/pglite": "^0.2.0",
+    "@electric-sql/pglite": "^0.5.8",
     "@sentry/node": "^11.1.0",
     "bullmq": "^6.3.10",
     "express": "^4.19.2",
