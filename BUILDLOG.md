@@ -76,10 +76,13 @@ exactly the point of the seam.
 - The production secrets remain in Render, not the public repository. Staging is deferred by
   owner decision; PR checks are not described as a staging environment.
 
-## What I'd do next with more time
+## Sprint 5 — Database integrity and queue durability
 
-- Finish the remaining Tier-0 deviations (staging if approved, full real-Postgres app suite,
-  missing FK indexes/`updated_at` triggers, and the hosted dashboard/full forced-failure
-  observability demonstration).
-- Then start Tier 1-A: organizations, memberships, row-level data isolation, and negative
-  cross-tenant tests before adding customer-facing auth or accounts.
+- Added migration 003 for the two remaining current-schema foreign-key indexes and database-enforced `updated_at` triggers on variants and publish attempts. PGlite and real-Postgres checks cover migration reruns, index/trigger presence, and timestamp updates.
+- Added a disposable PostgreSQL + Redis CI drill that hard-kills a BullMQ worker after the idempotent mock target records its post, then restarts the worker and verifies exactly one mock post and a succeeded slot. The crash failpoint is test-only; the harness refuses non-loopback DB/Redis endpoints, requires an explicit disposable-queue reset flag, and blanks external adapters and alert integrations.
+- Local lint, typecheck, the 17-test PGlite suite, audit, and actionlint pass. The disposable real-service drill is configured as a required PR CI step because the local sandbox has no PostgreSQL/Redis services.
+
+## Next planned work
+
+- Sprint 6: complete trace correlation across the BullMQ hop, configure the hosted dashboard, and demonstrate a safe no-network failure → dead-letter → Sentry/Slack alert path. Staging remains deferred; the full HTTP suite against PostgreSQL is optional unless the grading rubric requires it.
+- Then start Tier 1-A: organizations, memberships, row-level data isolation, and negative cross-tenant tests before adding customer-facing auth or accounts.

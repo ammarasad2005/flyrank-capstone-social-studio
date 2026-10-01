@@ -258,11 +258,13 @@ Postgres advisory lock and applied transactionally. See `docs/RELEASES.md` for t
 safety/rollback policy and release checklist, and `docs/SECRETS-ROTATION.md` for credential
 rotation procedures.
 
-Pull requests to `main` run lint, typecheck, tests, dependency audit, Gitleaks, and a
-separate real-Postgres migration/concurrency check. Branch protection requires all three
-checks, requires PRs, and disallows admin bypass/direct pushes. Dependabot checks npm and
-GitHub Actions weekly. Staging is currently deferred; merging `main` deploys directly to
-production.
+Pull requests to `main` run lint, typecheck, tests, dependency audit, Gitleaks, real-Postgres
+migration/concurrency checks, and a BullMQ worker-crash/recovery check using disposable Redis
+and Postgres services. The recovery script refuses non-loopback endpoints and requires an
+explicit disposable-queue reset flag.
+Branch protection requires all three checks, requires PRs, and disallows admin bypass/direct
+pushes. Dependabot checks npm and GitHub Actions weekly. Staging is currently deferred; merging
+`main` deploys directly to production.
 
 ## License
 
