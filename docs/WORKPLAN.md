@@ -113,7 +113,7 @@ These are cheap and prevent rework across all tiers.
 > **Tier 0 exit criteria:** Postgres-backed, multi-worker, retrying, observable service with CI/CD
 > and all capstone probes green. This is "operable with the same features."
 >
-> **Current status:** Sprint 5's A6 migration/PGlite coverage and real BullMQ crash-recovery check passed with the required PR #10 CI checks (`build-test`, `postgres-concurrency`, and `gitleaks`). Sprint 6 implements and locally tests queue trace propagation, corrected alert expressions, an importable Grafana dashboard, and a safe offline failure drill; required PR CI is pending. Tier 0 remains open until the hosted scrape/dashboard is provisioned and a live Sentry/Slack alert is verified with an approved target. The raw-SQL migrator is an accepted ADR-0004 deviation; D2/F4 staging remains deferred after the 2026-10-02 review.
+> **Current status:** Sprint 5's A6 migration/PGlite coverage and real BullMQ crash-recovery check passed with the required PR #10 CI checks (`build-test`, `postgres-concurrency`, and `gitleaks`). Sprint 6 implements and locally tests queue trace propagation, corrected alert expressions, an importable Grafana dashboard, and a safe offline failure drill; PR #11's `build-test`, `postgres-concurrency`, and `gitleaks` checks passed on implementation commit `2198a06`. Tier 0 remains open until the hosted scrape/dashboard is provisioned and a live Sentry/Slack alert is verified with an approved target. The raw-SQL migrator is an accepted ADR-0004 deviation; D2/F4 staging remains deferred after the 2026-10-02 review.
 
 ---
 

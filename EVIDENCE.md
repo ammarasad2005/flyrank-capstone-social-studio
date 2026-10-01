@@ -311,8 +311,9 @@ JSON also parses and its panel rectangles do not overlap. `tests/metrics-auth.te
 the optional `/metrics` Bearer gate rejects missing/wrong tokens and accepts the configured
 32+ character token.
 
-C4 queue propagation and the dashboard/offline C6 artifacts are implemented. Required PR CI
-(including disposable real PostgreSQL/Redis recovery and Gitleaks) is pending; hosted Grafana
+C4 queue propagation and the dashboard/offline C6 artifacts are implemented. PR #11's
+required checks passed on implementation commit `2198a06`: `build-test`,
+`postgres-concurrency` (disposable PostgreSQL/Redis recovery), and `gitleaks`. Hosted Grafana
 scraping/dashboard import and a live Sentry/Slack event remain unverified because this
 workspace has no Grafana account/API access or approved external test target. Staging was
 re-evaluated on 2026-10-02 and remains deferred under ADR-0005. No production configuration was
