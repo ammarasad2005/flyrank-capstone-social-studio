@@ -24,7 +24,9 @@ Better Stack with no parsing.
 **Metrics — prom-client, `GET /metrics` (C3).** A Prometheus text endpoint rather than
 a full OpenTelemetry collector + Grafana deployment: zero infra, scrapeable by Grafana
 Cloud / Better Stack / a Prometheus server, and it runs identically in the sandbox.
-Series:
+An optional Bearer gate (`METRICS_AUTH_TOKEN`, at least 32 characters) can protect hosted
+scraping; an empty value preserves the existing public endpoint. Set it before connecting a
+hosted scraper. Series:
 - `http_request_duration_seconds` (histogram; `method`, low-cardinality `route`, `status`)
 - `publish_attempts_total` (`adapter`, `outcome=succeeded|failed|reused`)
 - `publish_duration_seconds` (histogram; adapter latency by `adapter`, `outcome`)

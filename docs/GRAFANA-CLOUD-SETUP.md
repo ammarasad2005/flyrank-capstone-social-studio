@@ -11,12 +11,15 @@ Prometheus-compatible URL without a collector service. The production endpoint i
 `https://flyrank-social-studio.onrender.com/metrics`.
 
 1. In Grafana Cloud, open **Connections → Add new connection → Metrics Endpoint**.
-2. Add the URL above, use an appropriate scrape interval (one minute is sufficient for
-   this capstone), and test the connection.
-3. The current endpoint is unauthenticated. If metrics access is protected later, configure
-   the matching bearer/basic credentials in the scrape job; never commit them here.
+2. Before enabling the scrape, generate a random token of at least 32 characters, set it as
+   `METRICS_AUTH_TOKEN` in the Render service environment, and deploy. Do not use or commit a
+   social-platform credential for this purpose.
+3. Add the URL above, use an appropriate scrape interval (one minute is sufficient for this
+   capstone), configure **Bearer** authentication with the same token, and test the connection.
+   The Metrics Endpoint integration's current setup asks for scrape credentials; confirm the
+   exact options in your Grafana Cloud stack UI.
 4. Import `observability/grafana/social-media-studio.json` from **Dashboards → New → Import**.
-   Select the Prometheus data source created by the Metrics Endpoint integration.
+   Select the authenticated Prometheus data source created by the Metrics Endpoint integration.
 5. Load the PromQL alert rules from `docs/OBSERVABILITY.md` and connect notifications to the
    approved Slack channel. The application-side dead-letter webhook remains independent.
 
@@ -38,12 +41,13 @@ scanner begins the queue trace because it is decoupled from the HTTP request.
 
 The dashboard definition and validation test are committed, but the hosted scrape and dashboard
 have **not** been provisioned from this workspace: no Grafana Cloud account/API access was
-provided. The production `/metrics` URL is publicly reachable; review that exposure before
-adding higher-sensitivity labels or per-customer data.
+provided. `METRICS_AUTH_TOKEN` is currently unset, so the production `/metrics` URL remains
+public until an owner configures the optional Bearer gate in Render. Set the token before
+connecting Grafana; do not add higher-sensitivity labels or per-customer data to a public scrape.
 
 Do not force a real Telegram or Mastodon failure in production to test alerting. Use the offline
 `tests/observability-failure.test.ts` drill: it exercises retry → dead-letter → Sentry transport
 and Slack-style webhook using PGlite and local stubs, and asserts there was no platform request.
 A separate live Sentry/Slack event still requires explicit approval and a designated test channel.
 
-References: [Grafana Cloud Metrics Endpoint integration](https://grafana.com/docs/grafana-cloud/send-data/metrics/metrics-prometheus/prometheus-config-examples/integration-guide/), [Render deployment](https://render.com/docs/deploys).
+References: [Grafana Prometheus integration guide](https://grafana.com/docs/grafana-cloud/observe-and-act/send-data/metrics/metrics-prometheus/prometheus-config-examples/integration-guide/), [Grafana Metrics Endpoint integration](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-metrics-endpoint/), [Render deployment](https://render.com/docs/deploys).

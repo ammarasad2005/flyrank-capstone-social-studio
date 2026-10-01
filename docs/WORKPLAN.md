@@ -81,7 +81,8 @@ These are cheap and prevent rework across all tiers.
 - [x] C3. Metrics via **prom-client** at `GET /metrics` (Prometheus text; scrapeable by
   Grafana Cloud / Better Stack): publish success rate & outcome, adapter latency
   (`publish_duration_seconds`), retries, dead-letter arrivals, queue depth (`slots_pending`),
-  HTTP latency. (Chose a self-contained /metrics endpoint over a full OTel collector to fit the
+  HTTP latency. The endpoint supports an optional 32+ character Bearer token for hosted
+  scraping. (Chose a self-contained /metrics endpoint over a full OTel collector to fit the
   free tier — see ADR-0003.)
 - [x] C4. Full cross-queue correlation: BullMQ producer spans inject Sentry `sentry-trace`,
   `baggage`, and W3C `traceparent` into slot-job data; worker spans resume the carrier, and
@@ -91,10 +92,10 @@ These are cheap and prevent rework across all tiers.
   whether Sentry retains spans.
 - [x] C5. `/health` (liveness) + `/ready` (readiness: DB always, Redis when QUEUE_DRIVER=bull)
   returning 503 + a per-check breakdown; documented for the deploy platform.
-- [~] C6. Alerting rules authored and corrected for low/no-traffic windows (`docs/OBSERVABILITY.md`); the importable Grafana dashboard is `observability/grafana/social-media-studio.json`. A safe offline failure drill proves retries → DLQ → Sentry transport + webhook stub. Actual hosted scrape/dashboard import and live external Sentry/Slack delivery remain pending Grafana account access and an approved test target.
+- [~] C6. Alerting rules authored and corrected for low/no-traffic windows (`docs/OBSERVABILITY.md`); the importable Grafana dashboard is `observability/grafana/social-media-studio.json`. A safe offline failure drill proves retries → DLQ → Sentry transport + webhook stub. Hosted scrape/dashboard import and live external Sentry/Slack delivery remain pending Grafana access, owner configuration of the optional `/metrics` Bearer token, and an approved test target.
 
 **Acceptance:** a forced adapter failure shows up in Sentry + a dashboard + an alert.
-**Current status:** Sentry and Slack are configured in Render; a Sentry capture-path smoke was sent and the webhook accepted a setup notification. Sprint 6 adds and tests queue trace propagation and an offline retry → DLQ → Sentry/webhook-stub path. No hosted Grafana account/API access or designated live alert target is available in this workspace, so external dashboard provisioning and live event delivery remain unverified.
+**Current status:** Sentry and Slack are configured in Render; a Sentry capture-path smoke was sent and the webhook accepted a setup notification. Sprint 6 adds and tests queue trace propagation and an offline retry → DLQ → Sentry/webhook-stub path. No hosted Grafana account/API access or designated live alert target is available in this workspace, and the optional `/metrics` Bearer token is not configured in production, so external dashboard provisioning and live event delivery remain unverified.
 **Depends on:** T0-A (ids), T0-B (queue metrics).
 
 ## Epic T0-D — CI/CD + config + secrets hygiene

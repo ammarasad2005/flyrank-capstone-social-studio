@@ -295,7 +295,7 @@ Local verification on 2026-10-02 (Asia/Karachi):
 ```
 $ npm run lint                         -> pass
 $ npm run typecheck                    -> pass
-$ npm test                             -> 21 pass, 0 fail
+$ npm test                             -> 22 pass, 0 fail
 $ npm audit --audit-level=high         -> 0 vulnerabilities
 $ git diff --check                     -> pass
 ```
@@ -307,11 +307,14 @@ failures with credentials blanked, verifies two retry increments then dead-lette
 that the actual exception reached an in-memory Sentry transport and one alert reached a local
 webhook stub, and asserts no Telegram network request occurred. `tests/grafana-dashboard.test.ts`
 validates the importable seven-panel dashboard and required reliability signals; the dashboard
-JSON also parses and its panel rectangles do not overlap.
+JSON also parses and its panel rectangles do not overlap. `tests/metrics-auth.test.ts` verifies
+the optional `/metrics` Bearer gate rejects missing/wrong tokens and accepts the configured
+32+ character token.
 
 C4 queue propagation and the dashboard/offline C6 artifacts are implemented. Required PR CI
 (including disposable real PostgreSQL/Redis recovery and Gitleaks) is pending; hosted Grafana
 scraping/dashboard import and a live Sentry/Slack event remain unverified because this
 workspace has no Grafana account/API access or approved external test target. Staging was
 re-evaluated on 2026-10-02 and remains deferred under ADR-0005. No production configuration was
-changed; Sentry trace sampling remains opt-in at 0.
+changed; `METRICS_AUTH_TOKEN` is still unset (so `/metrics` remains public) and Sentry trace
+sampling remains opt-in at 0.

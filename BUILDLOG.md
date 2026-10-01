@@ -88,6 +88,7 @@ exactly the point of the seam.
 - Added Sentry producer and consumer spans around the BullMQ hop, using W3C trace context and OpenTelemetry messaging attributes. Each job carries `sentry-trace`, `baggage`, and `traceparent`; producer/consumer logs share a trace id. A test verifies the trace survives JSON serialization. The recurring DB scan is the trace root because publishing is asynchronous from scheduling HTTP.
 - Added an offline forced-failure drill: credential-less Telegram throws before platform fetch, while PGlite, an in-memory Sentry transport, and a webhook stub verify retries, dead-letter metrics, Sentry capture, and alert payload without external network calls.
 - Added an importable Grafana reliability dashboard and setup instructions. Corrected success/error-rate PromQL for low traffic and no-traffic windows.
+- Added optional Bearer protection for `/metrics` (minimum 32-character token, timing-safe comparison) because Grafana Cloud's Metrics Endpoint setup requires scrape credentials. The production token remains unset; no production environment was changed.
 - Hosted Grafana scrape/dashboard provisioning and a live external Sentry/Slack event remain unverified because no Grafana account/API access or approved live test target is available. `SENTRY_TRACES_SAMPLE_RATE` remains opt-in at 0; no production environment was changed.
 
 ## Next planned work

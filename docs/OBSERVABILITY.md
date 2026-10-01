@@ -8,7 +8,7 @@ How to see, debug, and alert on the Social Media Studio.
 | --- | --- |
 | `GET /health` | Liveness — process is up. Always cheap. |
 | `GET /ready` | Readiness — checks DB, and Redis when `QUEUE_DRIVER=bull`. `200` ready / `503` not-ready with a per-check breakdown. |
-| `GET /metrics` | Prometheus metrics (disable with `METRICS_ENABLED=false`). |
+| `GET /metrics` | Prometheus metrics (disable with `METRICS_ENABLED=false`); optional Bearer gate via `METRICS_AUTH_TOKEN` (empty means public). |
 
 Point your platform's health check at `/ready` (gates traffic) and `/health` (restarts).
 
@@ -54,7 +54,15 @@ scrape_configs:
     static_configs:
       - targets: ['flyrank-social-studio.onrender.com']
     scheme: https
+    # If METRICS_AUTH_TOKEN is set, provide the same value from a secret file:
+    # authorization:
+    #   type: Bearer
+    #   credentials_file: /etc/prometheus/secrets/social-media-studio-metrics
 ```
+
+An empty `METRICS_AUTH_TOKEN` preserves the legacy public endpoint. Generate a dedicated
+random token (at least 32 characters) and set it on Render before configuring hosted scraping;
+never reuse a social-platform or Sentry secret.
 
 ## Dashboard and alerting rules (C6)
 
