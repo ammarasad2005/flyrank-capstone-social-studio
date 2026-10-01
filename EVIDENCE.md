@@ -248,3 +248,40 @@ SQL and recording `_migrations`. The new PostgreSQL CI script inserts eight due 
 starts twelve concurrent claimers, asserts eight unique claims and four empty results, then
 races duplicate attempt reservations and asserts one stored row. Its disposable rows are
 removed before the job exits. See `docs/RELEASES.md` and ADR-0004 for limits and recovery policy.
+
+---
+
+## Sprint 5 — Database integrity and queue durability
+
+Migration `003_fk_indexes_and_updated_at.sql` adds indexes for the remaining current-schema
+foreign keys (`slots.variant_id`, `publish_attempts.variant_id`) and `BEFORE UPDATE` triggers
+for `variants.updated_at` and `publish_attempts.updated_at`. The PGlite migration test checks
+ledger reruns, the complete current FK-index set, trigger presence, and that each trigger
+replaces a deliberately stale timestamp.
+
+Local verification:
+
+```
+$ npm run lint                         -> pass
+$ npm run typecheck                    -> pass
+$ npm test                             -> 17 pass, 0 fail
+$ npm audit --audit-level=high         -> 0 vulnerabilities
+$ actionlint .github/workflows/ci.yml  -> pass
+```
+
+PR #10's required checks passed:
+
+```
+build-test:          success (install, lint, typecheck, 17 PGlite tests, dependency audit)
+postgres-concurrency: success (Postgres migration/schema checks, concurrent claims,
+                     duplicate reservation, plus BullMQ restart recovery with Redis)
+gitleaks:            success (full-history scan)
+```
+
+The BullMQ recovery drill runs against disposable PostgreSQL and Redis services. It starts
+a real worker process, lets the `mock_x` target commit its idempotent mock post, then hard-kills
+the worker before success is recorded. A new worker reclaims the `publishing` slot and
+completes it; the test asserts one mock post and a succeeded attempt, then removes its rows
+and test queue. No social API or alert endpoint is called: test child processes have those
+credentials blanked, and the harness refuses non-loopback DB/Redis endpoints unless the CI
+step explicitly opts into resetting the disposable queue.

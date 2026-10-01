@@ -40,9 +40,9 @@ These are cheap and prevent rework across all tiers.
 - [x] A3. Repository uses async `pg` in production (PGlite locally/tests).
 - [x] A4. Due-slot claims use `FOR UPDATE SKIP LOCKED`; a real-Postgres multi-claimer test runs in CI.
 - [x] A5. UNIQUE idempotency keys and `ON CONFLICT DO NOTHING` remain in place; the real-Postgres CI smoke test verifies duplicate reservation reuse.
-- [~] A6. `timestamptz`, CHECK constraints, and several FK indexes exist. Dedicated `updated_at` triggers and indexes for every FK are not yet implemented.
+- [x] A6. `timestamptz`, CHECK constraints, indexes for every current FK, and `updated_at` triggers on mutable timestamped tables are covered by migration 003 and tests.
 
-**Acceptance status:** the full HTTP/unit suite remains hermetic on PGlite; a separate disposable-real-Postgres CI check now exercises migrations, concurrent claims, and duplicate attempt reservation. Running the entire HTTP suite against PostgreSQL remains a follow-up if the rubric requires it.
+**Acceptance status:** the HTTP/unit suite remains hermetic on PGlite. Disposable real-Postgres CI verifies migration reruns, current FK indexes and timestamp triggers, concurrent claims, and duplicate attempt reservation; a real-Redis/real-Postgres job also hard-kills a BullMQ worker after a mock send and verifies restart recovery without a duplicate. Running the entire HTTP suite against PostgreSQL remains a follow-up if the rubric requires it.
 **Depends on:** F1.
 
 ## Epic T0-B — Separate, scalable worker + real job engine
@@ -66,8 +66,7 @@ These are cheap and prevent rework across all tiers.
 - [x] B6. **Graceful shutdown:** SIGTERM/SIGINT stop the poller/worker and close the queue
   cleanly in both `src/server.ts` and `src/worker.ts`.
 
-**Acceptance:** killing a worker mid-batch resumes with no dup (existing durable test, now
-against the queue); a flaky adapter is retried with backoff then dead-lettered + alerted.
+**Acceptance:** a disposable real-Postgres/Redis CI test hard-kills the BullMQ worker after an idempotent mock send commits, then verifies startup recovery finishes the slot with exactly one mock post. The existing domain tests cover retry/backoff/dead-letter decisions; the external alert drill remains in T0-C.
 **Depends on:** T0-A.
 
 ## Epic T0-C — Observability & operability
@@ -89,9 +88,9 @@ against the queue); a flaky adapter is retried with backoff then dead-lettered +
   queue hop are the remaining productionization step (ADR-0003).
 - [x] C5. `/health` (liveness) + `/ready` (readiness: DB always, Redis when QUEUE_DRIVER=bull)
   returning 503 + a per-check breakdown; documented for the deploy platform.
-- [x] C6. Alerting rules authored (`docs/OBSERVABILITY.md`): publish success-rate drop, DLQ
+- [~] C6. Alerting rules authored (`docs/OBSERVABILITY.md`): publish success-rate drop, DLQ
   arrivals, queue backlog, adapter/API 5xx spike — plus an immediate `ALERT_WEBHOOK_URL` push on
-  dead-letter. (Loading them into a hosted dashboard is a deploy-time step.)
+  dead-letter. The hosted dashboard and full forced-failure demonstration remain for Sprint 6.
 
 **Acceptance:** a forced adapter failure shows up in Sentry + a dashboard + an alert.
 **Current status:** Sentry and Slack are configured in Render; a Sentry capture-path smoke was sent and the webhook accepted a setup notification. A full adapter-failure → dead-letter → Sentry/Slack event and hosted dashboard are not yet demonstrated; dashboard setup is skipped for now.
@@ -100,11 +99,11 @@ against the queue); a flaky adapter is retried with backoff then dead-lettered +
 ## Epic T0-D — CI/CD + config + secrets hygiene
 **Objective:** safe, automated delivery. **Effort: M**
 
-- [x] D1. CI runs lint, `tsc`, PGlite tests, `npm audit`, Gitleaks, and a disposable real-Postgres migration/claim/idempotency check. `main` requires all three checks on PRs; direct pushes and admin bypass are blocked.
+- [x] D1. CI runs lint, `tsc`, PGlite tests, `npm audit`, Gitleaks, disposable real-Postgres migration/claim/idempotency checks, and a disposable real-Postgres/Redis BullMQ restart-recovery test. `main` requires all three checks on PRs; direct pushes and admin bypass are blocked.
 - [~] D2. **Deferred by owner decision (2026-10-01):** no staging service/manual promote. `main` auto-deploys to prod; PRs are review gates, not staging.
 - [x] D3. **Config validation** with **zod** (`src/config.ts`) — coerces types, applies defaults, and fails fast at boot on invalid env.
 - [x] D4. Production credentials are stored as Render service-scoped environment variables; rotation is documented in `docs/SECRETS-ROTATION.md`.
-- [x] D5. Startup migrations are transactionally applied under an advisory lock; real-Postgres CI verifies migration reruns, concurrent claims, and idempotency reservations. Recovery/expand-contract policy is in `docs/RELEASES.md`.
+- [x] D5. Startup migrations are transactionally applied under an advisory lock; real-Postgres CI verifies migration reruns, schema hygiene, concurrent claims, idempotency reservations, and BullMQ restart recovery against disposable Redis. Recovery/expand-contract policy is in `docs/RELEASES.md`.
 
 **Acceptance:** required PR checks block merge. Staging promotion remains deferred; migrations are applied automatically during service startup before the listener opens.
 **Depends on:** F1, T0-A.
@@ -112,9 +111,7 @@ against the queue); a flaky adapter is retried with backoff then dead-lettered +
 > **Tier 0 exit criteria:** Postgres-backed, multi-worker, retrying, observable service with CI/CD
 > and all capstone probes green. This is "operable with the same features."
 >
-> **Current status:** T0-D D1 and D3–D5 are complete; D2/F4 staging is deferred by the owner.
-> Tier 0 is not fully closed while T0-A's ORM/data-model items remain partial and the T0-C
-> hosted-dashboard/full forced-failure demonstration is outstanding.
+> **Current status:** Sprint 5's A6 migration/PGlite coverage and real BullMQ crash-recovery check passed with the required PR #10 CI checks (`build-test`, `postgres-concurrency`, and `gitleaks`). The raw-SQL migrator is an accepted ADR-0004 deviation, and D2/F4 staging is deferred by the owner. Tier 0 remains open until Sprint 6 completes T0-C cross-queue tracing and the hosted-dashboard/full forced-failure demonstration.
 
 ---
 
@@ -317,26 +314,30 @@ gates every real adapter.
 
 | Sprint | Focus | Epics |
 |---|---|---|
-| 1 | TS migration + Postgres + migrations | F1, T0-A |
-| 2 | Worker/queue + retries + CI | T0-B, T0-D |
-| 3 | Observability + graceful shutdown; **Tier 0 done** | T0-C, finish T0-B |
-| 4 | Tenancy + schema backfill | T1-A |
-| 5 | Auth/RBAC + audit | T1-B |
-| 6–7 | Connected accounts + OAuth + encryption | T1-C |
-| 8–9 | Real adapters (X, LinkedIn) + profiles | T1-D |
-| 10 | Media pipeline; **Tier 1 done** | T1-E |
-| 11–12 | Dashboard UI | T2-A |
-| 13 | Advanced scheduling + rate-aware pacing | T2-C |
-| 14 | Analytics | T2-B |
-| 15 | AI quality + compliance | T2-D |
-| 16 | Collaboration + notifications; **Tier 2 done** | T2-E |
+| 1 | TypeScript, Postgres, and migrations | F1, T0-A foundation |
+| 2 | Worker/queue, retries, and dead-letter behavior | T0-B foundation |
+| 3 | Logging, metrics, health probes, and shutdown | T0-C foundation |
+| 4 | CI, secret scanning, and safe startup migrations | T0-D |
+| 5 | FK indexes/`updated_at` triggers; real BullMQ worker-crash recovery | T0-A, T0-B closeout |
+| 6 | Cross-queue trace correlation; hosted dashboard and forced-failure proof; **Tier 0 done** | T0-C closeout |
+| 7 | Tenancy schema, default-org backfill, and isolation tests | T1-A |
+| 8 | Auth/RBAC, API keys, and audit | T1-B |
+| 9–10 | Connected accounts, credential protection, OAuth where supported | T1-C |
+| 11–12 | Account-scoped real adapters and platform profiles | T1-D |
+| 13 | Media pipeline; **Tier 1 done** | T1-E |
+| 14–15 | Dashboard UI | T2-A |
+| 16 | Advanced scheduling + rate-aware pacing | T2-C |
+| 17 | Analytics | T2-B |
+| 18 | AI quality + compliance | T2-D |
+| 19 | Collaboration + notifications; **Tier 2 done** | T2-E |
 
 ---
 
 ## Testing strategy (per tier)
 
-- **Tier 0:** keep `node:test`; add a **concurrency test** (2 workers, no double-publish) and a
-  **queue durability** test (kill worker mid-job). Contract test the migration.
+- **Tier 0:** keep `node:test`; CI covers real-Postgres claim contention and migration contracts,
+  plus a disposable real-Redis BullMQ test that kills a worker after a mock send and verifies
+  recovery without a duplicate. Keep the domain retry/dead-letter tests hermetic on PGlite.
 - **Tier 1:** **tenancy negative tests** (cross-org denied), authz matrix tests (role × endpoint),
   **contract tests per adapter** with recorded API responses (CI never hits live), token-refresh
   and revocation tests, media-validation tests.
@@ -368,7 +369,7 @@ gates every real adapter.
 | Rate limits → customer account bans | Per-account rate-aware pacing (T2-C) *before* onboarding many accounts |
 | Multi-tenancy retrofit pain | Do T1-A before real data; RLS + mandatory scoping + negative tests |
 | OAuth token security | Encrypt at rest (KMS/libsodium), least-privilege scopes, rotation, revocation handling |
-| Scope creep across 16 sprints | Ship each tier behind flags; enforce epic exit criteria before moving on |
+| Scope creep across 19 sprints | Ship each tier behind flags; enforce epic exit criteria before moving on |
 | Exactly-once regressions during the DB/queue moves | Re-run durability + concurrency tests as gates on T0-A and T0-B |
 
 ---

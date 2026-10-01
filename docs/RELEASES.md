@@ -6,9 +6,11 @@ A pull request targeting `main` runs three required checks:
 
 1. **`build-test`** — `npm ci`, ESLint, TypeScript type-check, the PGlite unit/integration
    suite, and `npm audit --audit-level=high`.
-2. **`postgres-concurrency`** — starts a disposable PostgreSQL service, applies migrations,
-   reruns them to prove idempotency, then has concurrent callers claim due slots. The test
-   asserts that each slot is claimed once and cleans up its rows.
+2. **`postgres-concurrency`** — starts disposable PostgreSQL and Redis services, applies
+   migrations and reruns them, verifies schema indexes/triggers, and has concurrent callers
+   claim due slots. It also hard-kills a BullMQ worker after an idempotent mock send, restarts
+   the worker, and verifies the slot completes with exactly one mock post. Fixture rows and
+   the test queue are cleaned up.
 3. **`gitleaks`** — scans the repository history for credentials. The workflow checks out
    full history, and the action is configured not to post comments or upload artifacts.
 

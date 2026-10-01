@@ -20,6 +20,15 @@ export class MockPublisher extends SocialPublisher {
       idempotency_key: idempotencyKey,
       content: variant.content,
     });
+
+    // CI-only failpoint: hard-kill the BullMQ worker after the mock target has
+    // committed the post but before publishSlot can record success. The test runs
+    // against disposable local Postgres/Redis services and proves idempotent recovery.
+    if (created && process.env.NODE_ENV === 'test' && process.env.FLYRANK_TEST_CRASH_AFTER_MOCK_PUBLISH === '1') {
+      process.kill(process.pid, 'SIGKILL');
+      await new Promise<never>(() => {});
+    }
+
     return {
       externalId: `mock-${this.id}-${row.id}`,
       externalUrl: `mock://${this.id}/${row.id}`,

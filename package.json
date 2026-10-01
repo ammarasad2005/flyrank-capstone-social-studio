@@ -11,6 +11,7 @@
     "seed": "node --import tsx src/seed.ts",
     "test": "NODE_ENV=test node --import tsx --test tests/*.test.ts",
     "test:postgres": "node --import tsx scripts/test-postgres-concurrency.ts",
+    "test:bullmq": "node --import tsx scripts/test-bullmq-restart.ts",
     "lint": "eslint src tests scripts",
     "typecheck": "tsc --noEmit"
   },
