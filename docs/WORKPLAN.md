@@ -111,7 +111,7 @@ These are cheap and prevent rework across all tiers.
 > **Tier 0 exit criteria:** Postgres-backed, multi-worker, retrying, observable service with CI/CD
 > and all capstone probes green. This is "operable with the same features."
 >
-> **Current status:** Sprint 5's A6 migration/PGlite coverage and real BullMQ crash-recovery CI test are implemented; the required disposable Postgres/Redis check must pass before closeout is recorded complete. The raw-SQL migrator is an accepted ADR-0004 deviation, and D2/F4 staging is deferred by the owner. Tier 0 remains open until Sprint 6 completes T0-C cross-queue tracing and the hosted-dashboard/full forced-failure demonstration.
+> **Current status:** Sprint 5's A6 migration/PGlite coverage and real BullMQ crash-recovery check passed with the required PR #10 CI checks (`build-test`, `postgres-concurrency`, and `gitleaks`). The raw-SQL migrator is an accepted ADR-0004 deviation, and D2/F4 staging is deferred by the owner. Tier 0 remains open until Sprint 6 completes T0-C cross-queue tracing and the hosted-dashboard/full forced-failure demonstration.
 
 ---
 
