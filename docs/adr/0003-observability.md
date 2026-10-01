@@ -24,7 +24,9 @@ Better Stack with no parsing.
 **Metrics — prom-client, `GET /metrics` (C3).** A Prometheus text endpoint rather than
 a full OpenTelemetry collector + Grafana deployment: zero infra, scrapeable by Grafana
 Cloud / Better Stack / a Prometheus server, and it runs identically in the sandbox.
-Series:
+An optional Bearer gate (`METRICS_AUTH_TOKEN`, at least 32 characters) can protect hosted
+scraping; an empty value preserves the existing public endpoint. Set it before connecting a
+hosted scraper. Series:
 - `http_request_duration_seconds` (histogram; `method`, low-cardinality `route`, `status`)
 - `publish_attempts_total` (`adapter`, `outcome=succeeded|failed|reused`)
 - `publish_duration_seconds` (histogram; adapter latency by `adapter`, `outcome`)
@@ -41,21 +43,26 @@ into `processSlot()` at dead-letter. Set the DSN in prod to light it up.
 `/ready` now checks **DB** (`SELECT 1`) **and**, when `QUEUE_DRIVER=bull`, **Redis**
 (`PING`), returning `503` with a per-check breakdown so the platform can gate traffic.
 
-**Correlation (partial C4).** A request id is generated at the edge, returned in
-`x-request-id`, and attached to every request log, giving web-side correlation. Full
-distributed tracing across web → queue → worker → adapter (OpenTelemetry spans) is
-recorded as the productionization step below rather than built now.
+**Correlation (C4 completed in Sprint 6).** A request id is generated at the edge and
+returned in `x-request-id`. BullMQ slot producers create Sentry spans with W3C trace context
+and OpenTelemetry messaging attributes, then serialize `sentry-trace`, `baggage`, and
+`traceparent` into each job. The worker continues that context and emits a child processing
+span; producer/consumer logs carry the same trace id.
+The periodic DB scanner is the root because queue processing is decoupled from the original
+HTTP scheduling request. `SENTRY_TRACES_SAMPLE_RATE` controls retention and remains `0` by
+default so production event volume is not silently increased.
 
 ## Consequences
 
 - Debuggable (structured logs + request ids), measurable (`/metrics`), and alertable
   (see `docs/OBSERVABILITY.md`) with **no extra infrastructure** — fits the free tier.
-- A forced adapter failure now: increments `publish_retries_total` →
-  `publish_dead_letters_total`, fires the DLQ alert (`ALERT_WEBHOOK_URL`), is captured
-  in Sentry (when a DSN is set), and is visible on `/metrics` — satisfying the epic's
-  acceptance.
+- The failure path increments `publish_retries_total` and `publish_dead_letters_total`,
+  calls the webhook and Sentry capture hooks, and is reflected on `/metrics`. The offline
+  integration test proves this with an in-memory Sentry transport and a webhook stub, without
+  calling a social platform. Hosted Grafana ingestion and an external Sentry/Slack event remain
+  unverified, so the T0-C epic acceptance is still open.
 - prom-client's DB-sampling gauges query on each scrape; cheap here, and easily moved
   to a cached/periodic collector if scrape volume grows.
-- **Not yet done (future):** OpenTelemetry traces spanning the queue hop (C4 in full),
-  and shipping metrics to a hosted dashboard with the alert rules loaded (C6 is
-  specified in `docs/OBSERVABILITY.md`, not yet provisioned).
+- **Not yet done:** provisioning the hosted Grafana Cloud scrape/dashboard and verifying the
+  failure alert in an approved external Sentry/Slack target (C6). The importable dashboard and
+  setup instructions are in the repository; no Grafana account/API access was provided.

@@ -203,7 +203,7 @@ ADAPTER_OVERRIDE=telegram=mock_x
 | `GET /history` | Every publish attempt + result |
 | `GET /mock-posts` | What the mock adapters recorded |
 | `GET /health` · `GET /ready` | Liveness · readiness (DB + queue) |
-| `GET /metrics` | Prometheus metrics |
+| `GET /metrics` | Prometheus metrics (optional Bearer auth via `METRICS_AUTH_TOKEN`) |
 
 ---
 
@@ -214,7 +214,8 @@ ADAPTER_OVERRIDE=telegram=mock_x
   `slotId`/`adapter`/`outcome`. Level via `LOG_LEVEL` (`silent` in tests).
 - **Metrics** — Prometheus text at **`GET /metrics`**: publish success rate & adapter
   latency per platform, retries, dead-letter arrivals, queue depth (`slots_pending`),
-  plus HTTP latency and default process metrics.
+  plus HTTP latency and default process metrics. Protect hosted scraping with the optional
+  `METRICS_AUTH_TOKEN` Bearer gate; see `docs/GRAFANA-CLOUD-SETUP.md`.
 - **Readiness** — **`GET /ready`** checks the DB and (when `QUEUE_DRIVER=bull`) Redis,
   returning `503` with a per-check breakdown; **`GET /health`** is liveness.
 - **Error tracking** — optional **Sentry** (`SENTRY_DSN`); a safe no-op when unset.
@@ -263,8 +264,9 @@ migration/concurrency checks, and a BullMQ worker-crash/recovery check using dis
 and Postgres services. The recovery script refuses non-loopback endpoints and requires an
 explicit disposable-queue reset flag.
 Branch protection requires all three checks, requires PRs, and disallows admin bypass/direct
-pushes. Dependabot checks npm and GitHub Actions weekly. Staging is currently deferred; merging
-`main` deploys directly to production.
+pushes. Dependabot checks npm and GitHub Actions weekly. Staging was re-evaluated on
+2026-10-02 and remains deferred for this no-customer-data capstone; see `docs/RELEASES.md`.
+Merging `main` deploys directly to production.
 
 ## License
 
