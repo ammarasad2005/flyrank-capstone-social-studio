@@ -16,13 +16,14 @@ export interface QueryResult {
   rows: any[];
 }
 export type QueryFn = (text: string, params?: any[]) => Promise<QueryResult>;
+export type ExecFn = (sql: string) => Promise<void>;
 
 export interface Db {
   query: QueryFn;
-  /** Run fn inside a transaction; the passed query fn is bound to that transaction. */
-  withTx: <T>(fn: (q: QueryFn) => Promise<T>) => Promise<T>;
+  /** Run fn inside a transaction; both query and script-exec are bound to it. */
+  withTx: <T>(fn: (q: QueryFn, exec: ExecFn) => Promise<T>) => Promise<T>;
   /** Execute a multi-statement SQL script (used by the migrator). */
-  exec: (sql: string) => Promise<void>;
+  exec: ExecFn;
   close: () => Promise<void>;
 }
 
@@ -37,12 +38,13 @@ async function createDb(): Promise<Db> {
       ssl: process.env.PGSSL === 'disable' ? undefined : { rejectUnauthorized: false },
     });
     const query: QueryFn = (text, params) => pool.query(text, params).then((r: any) => ({ rows: r.rows }));
-    const withTx = async <T>(fn: (q: QueryFn) => Promise<T>): Promise<T> => {
+    const withTx = async <T>(fn: (q: QueryFn, exec: ExecFn) => Promise<T>): Promise<T> => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
         const q: QueryFn = (text, params) => client.query(text, params).then((r: any) => ({ rows: r.rows }));
-        const out = await fn(q);
+        const exec: ExecFn = (sql) => client.query(sql).then(() => undefined);
+        const out = await fn(q, exec);
         await client.query('COMMIT');
         return out;
       } catch (err) {
@@ -62,29 +64,37 @@ async function createDb(): Promise<Db> {
   const pg: any = dir === ':memory:' ? new PGlite() : new PGlite(dir);
   await pg.waitReady;
   const query: QueryFn = (text, params) => pg.query(text, params ?? []).then((r: any) => ({ rows: r.rows }));
-  const withTx = async <T>(fn: (q: QueryFn) => Promise<T>): Promise<T> =>
+  const withTx = async <T>(fn: (q: QueryFn, exec: ExecFn) => Promise<T>): Promise<T> =>
     pg.transaction(async (tx: any) => {
       const q: QueryFn = (text, params) => tx.query(text, params ?? []).then((r: any) => ({ rows: r.rows }));
-      return fn(q);
+      const exec: ExecFn = (sql) => tx.exec(sql).then(() => undefined);
+      return fn(q, exec);
     });
   const exec = (sql: string) => pg.exec(sql).then(() => undefined);
   return { query, withTx, exec, close: () => pg.close() };
 }
 
-async function migrate(db: Db): Promise<void> {
-  await db.exec(`CREATE TABLE IF NOT EXISTS _migrations (
-    name text PRIMARY KEY,
-    applied_at timestamptz NOT NULL DEFAULT now()
-  )`);
+export async function migrate(db: Db): Promise<void> {
   const migrationsDir = fileURLToPath(new URL('../migrations/', import.meta.url));
   const files = (await readdir(migrationsDir)).filter((f) => f.endsWith('.sql')).sort();
-  const applied = new Set((await db.query('SELECT name FROM _migrations')).rows.map((r) => r.name));
-  for (const file of files) {
-    if (applied.has(file)) continue;
-    const sql = await readFile(path.join(migrationsDir, file), 'utf8');
-    await db.exec(sql);
-    await db.query('INSERT INTO _migrations (name) VALUES ($1)', [file]);
-  }
+
+  // A transaction-scoped advisory lock prevents multiple web/worker processes from
+  // applying the same migration at once. DDL and its ledger entry commit atomically.
+  await db.withTx(async (query, exec) => {
+    await query('SELECT pg_advisory_xact_lock(hashtext($1))', ['social-media-studio:migrations']);
+    await exec(`CREATE TABLE IF NOT EXISTS _migrations (
+      name text PRIMARY KEY,
+      applied_at timestamptz NOT NULL DEFAULT now()
+    )`);
+
+    const applied = new Set((await query('SELECT name FROM _migrations')).rows.map((row) => row.name));
+    for (const file of files) {
+      if (applied.has(file)) continue;
+      const sql = await readFile(path.join(migrationsDir, file), 'utf8');
+      await exec(sql);
+      await query('INSERT INTO _migrations (name) VALUES ($1)', [file]);
+    }
+  });
 }
 
 // Initialise once at import time (top-level await) so importers get a ready DB.
