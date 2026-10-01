@@ -1,8 +1,9 @@
 # EVIDENCE
 
-One proof per requirement. Every block below is copied from a real run against the
-service (SQLite + Express, Node 20). Reproduce with `npm start` + the commands shown,
-or run `npm test` for the automated versions.
+One proof per requirement. The HTTP/unit suite runs against PGlite (in-process Postgres)
+with Express on Node 20; production uses managed Neon Postgres on Render. Reproduce local
+checks with `npm test`; the dedicated disposable-real-Postgres migration/concurrency check
+runs in GitHub Actions.
 
 ---
 
@@ -124,7 +125,7 @@ $ POST /slots/1/publish  ×3   (slot already succeeded)
 ```
 
 **Crash *after* the network send but *before* recording success** (automated in
-`tests/durable-restart.test.js`): the slot is left in `publishing`, the attempt row is
+`tests/durable-restart.test.ts`): the slot is left in `publishing`, the attempt row is
 still `pending`, and one mock post already exists. On restart the scheduler reclaims the
 slot and re-runs it:
 
@@ -164,8 +165,8 @@ mechanism reroutes the real Telegram target (`ADAPTER_OVERRIDE=telegram=mock_x`)
 
 ```
 $ npm test
-# tests 16
-# pass 16
+# tests 17
+# pass 17
 # fail 0
 ```
 
@@ -213,3 +214,37 @@ serves Prometheus text including `publish_attempts_total`, `publish_duration_sec
 `http_request_duration_seconds`. Publishing a slot increments the succeeded counter for
 that adapter. Every request is logged as structured JSON with an `x-request-id`. Full
 runbook + alert rules: `docs/OBSERVABILITY.md`.
+
+---
+
+## Sprint 4 — CI, secret scanning, and migration safety
+
+**PR #5** ([checks](https://github.com/ammarasad2005/flyrank-capstone-social-studio/pull/5/checks), `feat/sprint-4-ci-security-migrations`) ran all required GitHub checks successfully:
+
+```
+build-test:          success (install, lint, typecheck, 17 PGlite tests, npm audit)
+postgres-concurrency: success (real PostgreSQL service, migration rerun, concurrent claims, duplicate idempotency reservation)
+gitleaks:            success (full-history secret scan)
+```
+
+Local verification on the same code:
+
+```
+$ npm run lint                         -> pass
+$ npm run typecheck                    -> pass
+$ npm test                             -> 17 pass, 0 fail
+$ npm audit --audit-level=high         -> 0 vulnerabilities
+$ actionlint .github/workflows/ci.yml  -> pass
+$ gitleaks git --log-opts=--all        -> full reachable history scanned, no leaks
+```
+
+GitHub branch protection on `main` now requires `build-test`, `postgres-concurrency`, and
+`gitleaks`; PRs are required, checks must be up to date, administrators cannot bypass the
+rule, and force-push/deletion are disabled. Approval count is zero so the owner can merge
+self-authored PRs after CI passes.
+
+The migration runner holds one transaction-scoped advisory lock while applying all pending
+SQL and recording `_migrations`. The new PostgreSQL CI script inserts eight due slots,
+starts twelve concurrent claimers, asserts eight unique claims and four empty results, then
+races duplicate attempt reservations and asserts one stored row. Its disposable rows are
+removed before the job exits. See `docs/RELEASES.md` and ADR-0004 for limits and recovery policy.

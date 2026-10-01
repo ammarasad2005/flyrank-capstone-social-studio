@@ -19,15 +19,11 @@ this delivery and parked in `PRODUCTION-ROADMAP.md` as later improvisation.
 
 These are cheap and prevent rework across all tiers.
 
-- [ ] **F1 — Adopt TypeScript.** Migrate `src/` incrementally (allowJs, then file-by-file).
-  Types pay off the moment the schema and adapters multiply. **(M)**
-- [ ] **F2 — Definition of Done:** every task ships with tests, docs updated, passes CI, and is
-  behind a feature flag if user-facing. No direct-to-`main`; PRs only.
-- [ ] **F3 — Branching & commits:** trunk-based, short-lived branches, conventional-commit
-  messages, squash-merge. Keep the phased, readable history habit from the capstone.
-- [ ] **F4 — Environments:** `local` → `staging` → `prod`, each with isolated data + secrets.
-- [ ] **F5 — Architecture Decision Records** (`docs/adr/`): one short ADR per major choice
-  (Postgres, queue engine, auth provider, frontend framework).
+- [x] **F1 — Adopt TypeScript.** `src/`, `tests/`, and CI scripts are TypeScript; `tsc --noEmit` is a gate.
+- [x] **F2 — Definition of Done:** PRs run lint, typecheck, tests, audit, secret scan, and real-Postgres checks; docs/evidence are updated. Direct pushes to `main` are blocked by branch protection.
+- [~] **F3 — Branching & commits:** short-lived PR branches and phased conventional commits are used. Merge commits are retained to preserve the phased history rather than squash-merged.
+- [~] **F4 — Environments:** local + prod are active. Staging is intentionally deferred by the owner (2026-10-01); PR checks are not a staging environment.
+- [x] **F5 — Architecture Decision Records** (`docs/adr/`): key choices are recorded in ADRs 0001–0004; new major choices need an ADR.
 
 ---
 
@@ -39,22 +35,14 @@ These are cheap and prevent rework across all tiers.
 **Objective:** replace SQLite with Postgres and make the claim safe for N workers.
 **Effort: L**
 
-- [ ] A1. Choose Postgres host (Neon or the existing Supabase project) + connection pooling
-  (PgBouncer/Neon pooler). Write ADR.
-- [ ] A2. Introduce a migration tool — **Drizzle** (recommended: gives TS types too) or Prisma.
-  Convert the `CREATE TABLE IF NOT EXISTS` schema in `src/db.js` into versioned migrations.
-- [ ] A3. Port `src/repo.js` from `better-sqlite3` (sync) to `pg` (async). Repo interface stays
-  the same shape so routes/publisher barely change; make repo functions `async`.
-- [ ] A4. Replace the SQLite atomic claim (`repo.claimDueSlot`) with
-  `SELECT ... FROM slots WHERE status='pending' AND scheduled_at<=now() FOR UPDATE SKIP LOCKED
-  LIMIT n` → update to `publishing`. This is the change that unlocks **multiple workers**.
-- [ ] A5. Keep the UNIQUE `idempotency_key` on `publish_attempts` and `mock_posts` (Postgres
-  UNIQUE + `ON CONFLICT DO NOTHING`). Re-verify the idempotency tests pass against Postgres.
-- [ ] A6. Data-model cleanups enabled by Postgres: real `timestamptz`, enums as native types or
-  CHECKs, foreign-key indexes, `created_at/updated_at` triggers.
+- [x] A1. Neon pooled Postgres selected and in production (`DATABASE_URL`); decision in ADR-0001.
+- [~] A2. Ordered SQL migrations are implemented and now atomic/serialized, but the project deliberately keeps the small raw-SQL migrator instead of Drizzle/Prisma; see ADR-0004.
+- [x] A3. Repository uses async `pg` in production (PGlite locally/tests).
+- [x] A4. Due-slot claims use `FOR UPDATE SKIP LOCKED`; a real-Postgres multi-claimer test runs in CI.
+- [x] A5. UNIQUE idempotency keys and `ON CONFLICT DO NOTHING` remain in place; the real-Postgres CI smoke test verifies duplicate reservation reuse.
+- [~] A6. `timestamptz`, CHECK constraints, and several FK indexes exist. Dedicated `updated_at` triggers and indexes for every FK are not yet implemented.
 
-**Acceptance:** all existing probes + `npm test` pass against Postgres; two worker instances
-can run simultaneously without double-publishing (new concurrency test).
+**Acceptance status:** the full HTTP/unit suite remains hermetic on PGlite; a separate disposable-real-Postgres CI check now exercises migrations, concurrent claims, and duplicate attempt reservation. Running the entire HTTP suite against PostgreSQL remains a follow-up if the rubric requires it.
 **Depends on:** F1.
 
 ## Epic T0-B — Separate, scalable worker + real job engine
@@ -106,27 +94,27 @@ against the queue); a flaky adapter is retried with backoff then dead-lettered +
   dead-letter. (Loading them into a hosted dashboard is a deploy-time step.)
 
 **Acceptance:** a forced adapter failure shows up in Sentry + a dashboard + an alert.
+**Current status:** Sentry and Slack are configured in Render; a Sentry capture-path smoke was sent and the webhook accepted a setup notification. A full adapter-failure → dead-letter → Sentry/Slack event and hosted dashboard are not yet demonstrated; dashboard setup is skipped for now.
 **Depends on:** T0-A (ids), T0-B (queue metrics).
 
 ## Epic T0-D — CI/CD + config + secrets hygiene
 **Objective:** safe, automated delivery. **Effort: M**
 
-- [ ] D1. **GitHub Actions CI:** on PR run `npm test`, ESLint, `tsc --noEmit`, and a dependency
-  + secret scan (Dependabot + gitleaks). Block merge on failure.
-- [ ] D2. **CD:** auto-deploy `main` → staging; manual promote → prod (Render for now; revisit
-  Fly.io/Railway when web+worker split needs it).
-- [x] D3. **Config validation** with **zod** (`src/config.ts`) — coerces types, applies
-  defaults, and fails fast at boot on invalid env (e.g. `QUEUE_DRIVER=bull` with no `REDIS_URL`).
-- [ ] D4. **Secrets manager** for prod (Doppler / AWS Secrets Manager / Render env groups);
-  remove long-lived secrets from local `.env` habits. Document rotation.
-- [ ] D5. Run DB migrations automatically on deploy (with a safe, reversible strategy).
+- [x] D1. CI runs lint, `tsc`, PGlite tests, `npm audit`, Gitleaks, and a disposable real-Postgres migration/claim/idempotency check. `main` requires all three checks on PRs; direct pushes and admin bypass are blocked.
+- [~] D2. **Deferred by owner decision (2026-10-01):** no staging service/manual promote. `main` auto-deploys to prod; PRs are review gates, not staging.
+- [x] D3. **Config validation** with **zod** (`src/config.ts`) — coerces types, applies defaults, and fails fast at boot on invalid env.
+- [x] D4. Production credentials are stored as Render service-scoped environment variables; rotation is documented in `docs/SECRETS-ROTATION.md`.
+- [x] D5. Startup migrations are transactionally applied under an advisory lock; real-Postgres CI verifies migration reruns, concurrent claims, and idempotency reservations. Recovery/expand-contract policy is in `docs/RELEASES.md`.
 
-**Acceptance:** a red test blocks merge; a push to `main` lands on staging automatically with
-migrations applied.
+**Acceptance:** required PR checks block merge. Staging promotion remains deferred; migrations are applied automatically during service startup before the listener opens.
 **Depends on:** F1, T0-A.
 
 > **Tier 0 exit criteria:** Postgres-backed, multi-worker, retrying, observable service with CI/CD
 > and all capstone probes green. This is "operable with the same features."
+>
+> **Current status:** T0-D D1 and D3–D5 are complete; D2/F4 staging is deferred by the owner.
+> Tier 0 is not fully closed while T0-A's ORM/data-model items remain partial and the T0-C
+> hosted-dashboard/full forced-failure demonstration is outstanding.
 
 ---
 

@@ -239,22 +239,30 @@ Full details, a scrape config, and the alert rules: **`docs/OBSERVABILITY.md`**
   and Mastodon. The seam means adding a real X/LinkedIn adapter is one new file.
 - **Telegram has no idempotency key.** Its exactly-once is achieved by refusing to retry an
   in-flight send (at-most-once); an idempotent target like Mastodon can additionally re-send
-  safely. The trade-off is documented and tested (`tests/durable-restart.test.js`).
+  safely. The trade-off is documented and tested (`tests/durable-restart.test.ts`).
 - **No media/image generation, analytics, or thread-splitting** — explicit non-goals.
 
 See `EVIDENCE.md` for one proof per requirement and `BUILDLOG.md` for the AI-usage log.
 
-## Deployment
+## Deployment and delivery
 
-Deployed on **Render** (free web service) at
-[flyrank-social-studio.onrender.com](https://flyrank-social-studio.onrender.com). The
-Telegram secrets are set as Render **environment variables** (never committed). `PORT` is
-supplied by Render and the server binds `0.0.0.0`.
+Deployed on **Render** at
+[flyrank-social-studio.onrender.com](https://flyrank-social-studio.onrender.com). Production
+uses a managed Neon PostgreSQL database through Render's `DATABASE_URL`, BullMQ/Upstash,
+and service-scoped Render environment variables. No production secret is stored in this
+repository. `PORT` is supplied by Render and the server binds `0.0.0.0`.
 
-Note: with the default PGlite store on Render's ephemeral filesystem the DB resets on
-redeploy/restart (the durable scheduler still resumes correctly *within* a container's
-lifetime — see the crash-restart test). For persistence across restarts, set `DATABASE_URL`
-to a managed Postgres (Neon/Supabase).
+Locally, leave `DATABASE_URL` unset to use the in-process PGlite database. On startup, the
+versioned SQL migrations run before the HTTP listener starts; they are serialized with a
+Postgres advisory lock and applied transactionally. See `docs/RELEASES.md` for the migration
+safety/rollback policy and release checklist, and `docs/SECRETS-ROTATION.md` for credential
+rotation procedures.
+
+Pull requests to `main` run lint, typecheck, tests, dependency audit, Gitleaks, and a
+separate real-Postgres migration/concurrency check. Branch protection requires all three
+checks, requires PRs, and disallows admin bypass/direct pushes. Dependabot checks npm and
+GitHub Actions weekly. Staging is currently deferred; merging `main` deploys directly to
+production.
 
 ## License
 

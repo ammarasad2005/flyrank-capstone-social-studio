@@ -27,8 +27,11 @@ gives no HA/backups — the Tier 0 goal is to make the same features production-
 - Tests run fast and hermetically on PGlite (`:memory:`, isolated per file) — no external
   Postgres needed in CI — while prod uses a real managed Postgres via one env var.
 - The repo layer became `async`; routes/publisher/scheduler now await it.
-- **Follow-up:** add a CI job that runs a dedicated concurrency test against a real
-  networked Postgres service to validate multi-connection `SKIP LOCKED` contention (PGlite
-  is single-connection, so it validates the claim *logic*, not true contention).
+- **CI follow-up (Sprint 4):** a disposable PostgreSQL service now runs the migration runner,
+  re-runs it to verify idempotency, and contends multiple `claimDueSlot()` callers to validate
+  multi-connection `SKIP LOCKED` behavior. The full HTTP suite remains on PGlite for fast,
+  hermetic tests.
+- **Production database (2026-10-01):** Render uses Neon’s pooled connection through
+  `DATABASE_URL`; no connection string is stored in this repository.
 - An ORM (e.g. Drizzle) can be layered on later for typed queries; raw parameterized SQL
-  was chosen now to keep the port small and the SQL explicit.
+  remains the chosen trade-off to keep the port small and the SQL explicit.
