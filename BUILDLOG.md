@@ -60,9 +60,26 @@ re-sent, non-idempotent ones (Telegram) are refused and flagged `uncertain` rath
 risked. Both paths are now tested. Mastodon stayed in as a second real adapter — which is
 exactly the point of the seam.
 
+## Sprint 4 — CI, security, and migration safety
+
+- AI helped set up ESLint, CI jobs, Dependabot, Gitleaks, a disposable PostgreSQL test, and
+  the migration runbook. I kept the checks aligned with the actual Render/Neon deployment.
+- The migration runner was strengthened to apply DDL and ledger updates in one transaction
+  under a transaction-scoped advisory lock. A real-Postgres test now checks repeatable
+  migrations, concurrent due-slot claims, and duplicate idempotency reservations.
+- I kept the existing parameterized SQL repository and small SQL migrator rather than
+  introducing Drizzle/Prisma solely for this sprint. That is an explicit deviation from the
+  suggested ORM path, not a claim that the ORM checkbox is complete.
+- A review assistant incorrectly said the repository had no real-Postgres code path. I
+  inspected `src/db.ts`: it already supported `pg` and boot migrations; the actual gap was
+  connecting production to Neon and testing the concurrent path. I corrected the workplan.
+- The production secrets remain in Render, not the public repository. Staging is deferred by
+  owner decision; PR checks are not described as a staging environment.
+
 ## What I'd do next with more time
 
-- A real X/LinkedIn adapter behind the same interface (one file each).
-- Move to Postgres row-locking for a multi-node scheduler.
-- Backoff + capped retries on transient adapter failures (today a failed publish parks the
-  slot as `failed` for manual retry; crash-orphaned slots auto-resume).
+- Finish the remaining Tier-0 deviations (staging if approved, full real-Postgres app suite,
+  missing FK indexes/`updated_at` triggers, and the hosted dashboard/full forced-failure
+  observability demonstration).
+- Then start Tier 1-A: organizations, memberships, row-level data isolation, and negative
+  cross-tenant tests before adding customer-facing auth or accounts.
