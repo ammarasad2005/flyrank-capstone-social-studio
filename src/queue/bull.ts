@@ -5,8 +5,7 @@ import { processSlot } from '../process-slot.js';
 import { config } from '../config.js';
 import { logger } from '../observability/logger.js';
 import type { PublishQueue } from './types.js';
-
-const QUEUE_NAME = 'flyrank-publish';
+import { BULL_QUEUE_NAME } from './constants.js';
 
 /**
  * Bull driver (Upstash/Redis). Redis becomes the coordination layer for a fleet of
@@ -16,8 +15,8 @@ const QUEUE_NAME = 'flyrank-publish';
  * stay in the DB (see repo.recordSlotFailure) rather than using Bull-native retries,
  * so both drivers behave identically and the model is testable without a broker.
  *
- * Validated end-to-end against Upstash Redis; CI runs the in-process driver (no broker
- * in the sandbox). Enabled in prod via QUEUE_DRIVER=bull + REDIS_URL.
+ * CI runs a disposable real-Postgres/Redis worker-restart check. The domain retry tests
+ * remain broker-free; production enables this driver via QUEUE_DRIVER=bull + REDIS_URL.
  */
 export class BullQueue implements PublishQueue {
   private connection: IORedis;
@@ -27,7 +26,7 @@ export class BullQueue implements PublishQueue {
   constructor() {
     // BullMQ requires maxRetriesPerRequest: null on the shared connection.
     this.connection = new IORedis(config.queue.redisUrl, { maxRetriesPerRequest: null });
-    this.queue = new Queue(QUEUE_NAME, { connection: this.connection });
+    this.queue = new Queue(BULL_QUEUE_NAME, { connection: this.connection });
   }
 
   async start(): Promise<void> {
@@ -38,7 +37,7 @@ export class BullQueue implements PublishQueue {
       await setSlotStatus(s.id, 'pending');
     }
 
-    this.worker = new Worker(QUEUE_NAME, (job) => this.process(job), {
+    this.worker = new Worker(BULL_QUEUE_NAME, (job) => this.process(job), {
       connection: this.connection,
       concurrency: 4,
     });

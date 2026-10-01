@@ -47,9 +47,19 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
       DATABASE_URL: postgresql://ci:ci-password@127.0.0.1:5432/flyrank_ci
       PGSSL: disable
+      REDIS_URL: redis://127.0.0.1:6379
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -60,6 +70,10 @@ jobs:
         run: npm ci
       - name: Verify migrations and concurrent claims on real Postgres
         run: npm run test:postgres
+      - name: Verify BullMQ worker-crash recovery on real Postgres and Redis
+        env:
+          FLYRANK_TEST_ALLOW_QUEUE_RESET: '1'
+        run: npm run test:bullmq
 
   gitleaks:
     name: gitleaks
