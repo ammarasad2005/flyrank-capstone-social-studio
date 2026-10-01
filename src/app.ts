@@ -8,6 +8,7 @@ import { systemRouter } from './routes/system.js';
 import { logger } from './observability/logger.js';
 import { register, httpDuration, normalizeRoute } from './observability/metrics.js';
 import { captureError } from './observability/sentry.js';
+import { captureTraceCarrier, traceIdFromCarrier } from './observability/tracing.js';
 import { checkDb, checkQueue } from './observability/health.js';
 
 export function createApp() {
@@ -23,6 +24,10 @@ export function createApp() {
         const id = (req.headers['x-request-id'] as string) || randomUUID();
         res.setHeader('x-request-id', id);
         return id;
+      },
+      customProps: () => {
+        const traceId = traceIdFromCarrier(captureTraceCarrier());
+        return traceId ? { traceId } : {};
       },
       autoLogging: { ignore: (req) => ['/health', '/ready', '/metrics'].includes(req.url || '') },
     }),
