@@ -89,6 +89,7 @@ exactly the point of the seam.
 - Added an offline forced-failure drill: credential-less Telegram throws before platform fetch, while PGlite, an in-memory Sentry transport, and a webhook stub verify retries, dead-letter metrics, Sentry capture, and alert payload without external network calls.
 - Added an importable Grafana reliability dashboard and setup instructions. Corrected success/error-rate PromQL for low traffic and no-traffic windows.
 - Added optional Bearer protection for `/metrics` (minimum 32-character token, timing-safe comparison) because Grafana Cloud's Metrics Endpoint setup requires scrape credentials. The production token remains unset; no production environment was changed.
+- Added `observability/prometheus/alerts.yml` for direct Grafana rule import and a step-by-step owner-to-agent handoff handbook covering merge/deploy ordering, token setup, scrape, dashboard, alerts, safe tests, and the non-secret handoff packet.
 - Hosted Grafana scrape/dashboard provisioning and a live external Sentry/Slack event remain unverified because no Grafana account/API access or approved live test target is available. `SENTRY_TRACES_SAMPLE_RATE` remains opt-in at 0; no production environment was changed.
 
 ## Next planned work

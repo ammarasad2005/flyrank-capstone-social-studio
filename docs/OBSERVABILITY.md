@@ -66,63 +66,20 @@ never reuse a social-platform or Sentry secret.
 
 ## Dashboard and alerting rules (C6)
 
-The importable Grafana dashboard is `observability/grafana/social-media-studio.json`; setup
-instructions for the hosted Metrics Endpoint scrape are in `docs/GRAFANA-CLOUD-SETUP.md`. Load
-the following PromQL rules into Grafana Cloud or another Prometheus-compatible alert manager.
-Thresholds are starting points.
+The importable Grafana dashboard is `observability/grafana/social-media-studio.json`.
+The Prometheus rule file to upload is `observability/prometheus/alerts.yml`; the hosted scrape
+setup is in `docs/GRAFANA-CLOUD-SETUP.md`. Thresholds are starting points:
 
-```yaml
-groups:
-  - name: social-media-studio
-    rules:
-      # Publish success-rate drop (< 90% over 10m, once there's traffic)
-      - alert: PublishSuccessRateLow
-        expr: |
-          (
-            sum(rate(publish_attempts_total{outcome=~"succeeded|reused"}[10m]))
-            /
-            clamp_min(sum(rate(publish_attempts_total[10m])), 1e-9)
-          ) < 0.9
-          and sum(rate(publish_attempts_total[10m])) > 0
-        for: 10m
-        labels: { severity: page }
+| Rule | Condition | Hold time |
+| --- | --- | --- |
+| `PublishSuccessRateLow` | Publish success below 90%; suppressed when there is no traffic | 10m |
+| `DeadLetterArrivals` | Any dead-letter arrival in the last 15m | immediate |
+| `QueueBacklogHigh` | More than 50 pending slots | 10m |
+| `AdapterErrorSpike` | Adapter failure rate above 20%; suppressed when there is no traffic | 5m |
+| `Api5xxSpike` | API 5xx rate above 5%; suppressed when there is no traffic | 5m |
 
-      # DLQ arrivals — anything landing in the dead-letter queue
-      - alert: DeadLetterArrivals
-        expr: increase(publish_dead_letters_total[15m]) > 0
-        for: 0m
-        labels: { severity: page }
-
-      # Queue backlog / scheduler lag
-      - alert: QueueBacklogHigh
-        expr: slots_pending > 50
-        for: 10m
-        labels: { severity: warning }
-
-      # Adapter 5xx / error spike (failed publishes)
-      - alert: AdapterErrorSpike
-        expr: |
-          (
-            sum by (adapter) (rate(publish_attempts_total{outcome="failed"}[5m]))
-            /
-            clamp_min(sum by (adapter) (rate(publish_attempts_total[5m])), 1e-9)
-          ) > 0.2
-          and sum by (adapter) (rate(publish_attempts_total[5m])) > 0
-        for: 5m
-        labels: { severity: warning }
-
-      # API 5xx spike
-      - alert: Api5xxSpike
-        expr: |
-          (
-            sum(rate(http_request_duration_seconds_count{status=~"5.."}[5m]))
-            /
-            clamp_min(sum(rate(http_request_duration_seconds_count[5m])), 1e-9)
-          ) > 0.05
-          and sum(rate(http_request_duration_seconds_count[5m])) > 0
-        for: 5m
-        labels: { severity: warning }
-```
+The rule file adds `service=social-media-studio` and severity labels so a dedicated Grafana
+notification route can target these alerts without changing the instance's default policy.
 
 Independently of Prometheus, a dead-letter also fires an **immediate push alert** via
 `ALERT_WEBHOOK_URL` (Slack/Discord incoming webhook) — see `src/notify.ts`.

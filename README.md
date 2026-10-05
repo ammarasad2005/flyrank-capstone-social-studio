@@ -222,8 +222,10 @@ ADAPTER_OVERRIDE=telegram=mock_x
 - **Alerting** — Prometheus/Grafana rules (success-rate drop, DLQ arrivals, queue
   backlog, adapter/API 5xx) plus an immediate `ALERT_WEBHOOK_URL` push on dead-letter.
 
-Full details, a scrape config, and the alert rules: **`docs/OBSERVABILITY.md`**
-(design rationale in `docs/adr/0003-observability.md`).
+Full metric/alert details: **`docs/OBSERVABILITY.md`**; importable alert rules:
+**`observability/prometheus/alerts.yml`**. The owner-to-agent Grafana setup and handoff steps
+are in **`docs/GRAFANA-CLOUD-HANDOFF-HANDBOOK.md`** (design rationale in
+`docs/adr/0003-observability.md`).
 
 ---
 

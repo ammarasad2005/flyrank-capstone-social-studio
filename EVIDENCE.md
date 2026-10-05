@@ -309,7 +309,9 @@ webhook stub, and asserts no Telegram network request occurred. `tests/grafana-d
 validates the importable seven-panel dashboard and required reliability signals; the dashboard
 JSON also parses and its panel rectangles do not overlap. `tests/metrics-auth.test.ts` verifies
 the optional `/metrics` Bearer gate rejects missing/wrong tokens and accepts the configured
-32+ character token.
+32+ character token. `observability/prometheus/alerts.yml` parses as YAML and contains the five
+Prometheus alert rules; `docs/GRAFANA-CLOUD-HANDOFF-HANDBOOK.md` records the owner setup order,
+safety boundaries, and non-secret handoff fields.
 
 C4 queue propagation and the dashboard/offline C6 artifacts are implemented. PR #11's
 required checks passed on implementation commit `2198a06`: `build-test`,
