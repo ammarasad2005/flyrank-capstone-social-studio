@@ -1,0 +1,70 @@
+groups:
+  - name: social-media-studio
+    rules:
+      - alert: PublishSuccessRateLow
+        expr: |
+          (
+            sum(rate(publish_attempts_total{outcome=~"succeeded|reused"}[10m]))
+            /
+            clamp_min(sum(rate(publish_attempts_total[10m])), 1e-9)
+          ) < 0.9
+          and sum(rate(publish_attempts_total[10m])) > 0
+        for: 10m
+        labels:
+          severity: page
+          service: social-media-studio
+        annotations:
+          summary: Publish success rate is below 90 percent
+          description: The ten-minute publish success rate is below 90 percent.
+
+      - alert: DeadLetterArrivals
+        expr: increase(publish_dead_letters_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: page
+          service: social-media-studio
+        annotations:
+          summary: A publish reached the dead-letter queue
+          description: A slot was dead-lettered in the last fifteen minutes.
+
+      - alert: QueueBacklogHigh
+        expr: slots_pending > 50
+        for: 10m
+        labels:
+          severity: warning
+          service: social-media-studio
+        annotations:
+          summary: Scheduled queue backlog is high
+          description: More than 50 slots have remained pending for ten minutes.
+
+      - alert: AdapterErrorSpike
+        expr: |
+          (
+            sum by (adapter) (rate(publish_attempts_total{outcome="failed"}[5m]))
+            /
+            clamp_min(sum by (adapter) (rate(publish_attempts_total[5m])), 1e-9)
+          ) > 0.2
+          and sum by (adapter) (rate(publish_attempts_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: social-media-studio
+        annotations:
+          summary: Adapter failure rate exceeds 20 percent
+          description: Adapter {{ $labels.adapter }} has a failure rate above 20 percent.
+
+      - alert: Api5xxSpike
+        expr: |
+          (
+            sum(rate(http_request_duration_seconds_count{status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(http_request_duration_seconds_count[5m])), 1e-9)
+          ) > 0.05
+          and sum(rate(http_request_duration_seconds_count[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: social-media-studio
+        annotations:
+          summary: API 5xx rate exceeds 5 percent
+          description: The five-minute API 5xx rate is above 5 percent.

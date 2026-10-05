@@ -22,8 +22,8 @@ These are cheap and prevent rework across all tiers.
 - [x] **F1 — Adopt TypeScript.** `src/`, `tests/`, and CI scripts are TypeScript; `tsc --noEmit` is a gate.
 - [x] **F2 — Definition of Done:** PRs run lint, typecheck, tests, audit, secret scan, and real-Postgres checks; docs/evidence are updated. Direct pushes to `main` are blocked by branch protection.
 - [~] **F3 — Branching & commits:** short-lived PR branches and phased conventional commits are used. Merge commits are retained to preserve the phased history rather than squash-merged.
-- [~] **F4 — Environments:** local + prod are active. Staging is intentionally deferred by the owner (2026-10-01); PR checks are not a staging environment.
-- [x] **F5 — Architecture Decision Records** (`docs/adr/`): key choices are recorded in ADRs 0001–0004; new major choices need an ADR.
+- [~] **F4 — Environments:** local + prod are active. Staging was re-evaluated (2026-10-02) and remains deferred: this solo capstone has no onboarded customer data, while each PR runs disposable real-Postgres/Redis validation. Render's native PR preview environments require Pro and are separately billed; a persistent staging service would also need isolated DB, queue, secrets, and alert routing. Revisit before customer-data onboarding or if production risk materially changes; PR checks are not a staging environment.
+- [x] **F5 — Architecture Decision Records** (`docs/adr/`): key choices are recorded in ADRs 0001–0005; new major choices need an ADR.
 
 ---
 
@@ -81,26 +81,28 @@ These are cheap and prevent rework across all tiers.
 - [x] C3. Metrics via **prom-client** at `GET /metrics` (Prometheus text; scrapeable by
   Grafana Cloud / Better Stack): publish success rate & outcome, adapter latency
   (`publish_duration_seconds`), retries, dead-letter arrivals, queue depth (`slots_pending`),
-  HTTP latency. (Chose a self-contained /metrics endpoint over a full OTel collector to fit the
+  HTTP latency. The endpoint supports an optional 32+ character Bearer token for hosted
+  scraping. (Chose a self-contained /metrics endpoint over a full OTel collector to fit the
   free tier — see ADR-0003.)
-- [~] C4. Partial: a request id is generated at the edge, returned in `x-request-id`, and
-  attached to every request log for web-side correlation. Full OpenTelemetry spans across the
-  queue hop are the remaining productionization step (ADR-0003).
+- [x] C4. Full cross-queue correlation: BullMQ producer spans inject Sentry `sentry-trace`,
+  `baggage`, and W3C `traceparent` into slot-job data; worker spans resume the carrier, and
+  producer/consumer logs include the same trace id. A test verifies correlation across a
+  serialization boundary. The periodic DB scan is the root because slot publishing is
+  decoupled from the original scheduling HTTP request; `SENTRY_TRACES_SAMPLE_RATE` controls
+  whether Sentry retains spans.
 - [x] C5. `/health` (liveness) + `/ready` (readiness: DB always, Redis when QUEUE_DRIVER=bull)
   returning 503 + a per-check breakdown; documented for the deploy platform.
-- [~] C6. Alerting rules authored (`docs/OBSERVABILITY.md`): publish success-rate drop, DLQ
-  arrivals, queue backlog, adapter/API 5xx spike — plus an immediate `ALERT_WEBHOOK_URL` push on
-  dead-letter. The hosted dashboard and full forced-failure demonstration remain for Sprint 6.
+- [~] C6. Alerting rules authored and corrected for low/no-traffic windows (`observability/prometheus/alerts.yml`, documented in `docs/OBSERVABILITY.md`); the importable Grafana dashboard is `observability/grafana/social-media-studio.json`. A safe offline failure drill proves retries → DLQ → Sentry transport + webhook stub. The owner-to-agent setup sequence is `docs/GRAFANA-CLOUD-HANDOFF-HANDBOOK.md`. Hosted scrape/dashboard import and live external Sentry/Slack delivery remain pending Grafana access, owner configuration of the optional `/metrics` Bearer token, and an approved test target.
 
 **Acceptance:** a forced adapter failure shows up in Sentry + a dashboard + an alert.
-**Current status:** Sentry and Slack are configured in Render; a Sentry capture-path smoke was sent and the webhook accepted a setup notification. A full adapter-failure → dead-letter → Sentry/Slack event and hosted dashboard are not yet demonstrated; dashboard setup is skipped for now.
+**Current status:** Sentry and Slack are configured in Render; a Sentry capture-path smoke was sent and the webhook accepted a setup notification. Sprint 6 adds and tests queue trace propagation and an offline retry → DLQ → Sentry/webhook-stub path. No hosted Grafana account/API access or designated live alert target is available in this workspace, and the optional `/metrics` Bearer token is not configured in production, so external dashboard provisioning and live event delivery remain unverified.
 **Depends on:** T0-A (ids), T0-B (queue metrics).
 
 ## Epic T0-D — CI/CD + config + secrets hygiene
 **Objective:** safe, automated delivery. **Effort: M**
 
 - [x] D1. CI runs lint, `tsc`, PGlite tests, `npm audit`, Gitleaks, disposable real-Postgres migration/claim/idempotency checks, and a disposable real-Postgres/Redis BullMQ restart-recovery test. `main` requires all three checks on PRs; direct pushes and admin bypass are blocked.
-- [~] D2. **Deferred by owner decision (2026-10-01):** no staging service/manual promote. `main` auto-deploys to prod; PRs are review gates, not staging.
+- [~] D2. **Reaffirmed after review (2026-10-02):** no persistent staging service/manual promote for this capstone. Disposable real-Postgres/Redis CI is the current pre-merge environment; `main` auto-deploys to prod. Revisit before customer-data onboarding or if production risk materially changes.
 - [x] D3. **Config validation** with **zod** (`src/config.ts`) — coerces types, applies defaults, and fails fast at boot on invalid env.
 - [x] D4. Production credentials are stored as Render service-scoped environment variables; rotation is documented in `docs/SECRETS-ROTATION.md`.
 - [x] D5. Startup migrations are transactionally applied under an advisory lock; real-Postgres CI verifies migration reruns, schema hygiene, concurrent claims, idempotency reservations, and BullMQ restart recovery against disposable Redis. Recovery/expand-contract policy is in `docs/RELEASES.md`.
@@ -111,7 +113,7 @@ These are cheap and prevent rework across all tiers.
 > **Tier 0 exit criteria:** Postgres-backed, multi-worker, retrying, observable service with CI/CD
 > and all capstone probes green. This is "operable with the same features."
 >
-> **Current status:** Sprint 5's A6 migration/PGlite coverage and real BullMQ crash-recovery check passed with the required PR #10 CI checks (`build-test`, `postgres-concurrency`, and `gitleaks`). The raw-SQL migrator is an accepted ADR-0004 deviation, and D2/F4 staging is deferred by the owner. Tier 0 remains open until Sprint 6 completes T0-C cross-queue tracing and the hosted-dashboard/full forced-failure demonstration.
+> **Current status:** Sprint 5's A6 migration/PGlite coverage and real BullMQ crash-recovery check passed with the required PR #10 CI checks (`build-test`, `postgres-concurrency`, and `gitleaks`). Sprint 6 implements and locally tests queue trace propagation, corrected alert expressions, an importable Grafana dashboard, and a safe offline failure drill; PR #11's `build-test`, `postgres-concurrency`, and `gitleaks` checks passed on implementation commit `2198a06`. Tier 0 remains open until the hosted scrape/dashboard is provisioned and a live Sentry/Slack alert is verified with an approved target. The raw-SQL migrator is an accepted ADR-0004 deviation; D2/F4 staging remains deferred after the 2026-10-02 review.
 
 ---
 

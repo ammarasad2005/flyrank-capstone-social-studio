@@ -37,6 +37,13 @@ const envSchema = z.object({
   // observability (T0-C)
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   METRICS_ENABLED: bool(true),
+  METRICS_AUTH_TOKEN: z
+    .string()
+    .default('')
+    .refine(
+      (value) => value === '' || (value.length >= 32 && /^[A-Za-z0-9._~+/-]+=*$/.test(value)),
+      'must be empty or a 32+ character bearer token',
+    ),
   SENTRY_DSN: z.string().default(''),
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
 
@@ -88,6 +95,7 @@ export const config = {
   logLevel: env.LOG_LEVEL,
   metrics: {
     enabled: env.METRICS_ENABLED,
+    authToken: env.METRICS_AUTH_TOKEN,
   },
   sentry: {
     dsn: env.SENTRY_DSN,
