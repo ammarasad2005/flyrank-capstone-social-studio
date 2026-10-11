@@ -25,7 +25,9 @@ $ POST /posts/1/generate  {}
 ```
 
 Every generated variant is within its profile (mastodon ≤ 500, mock_x ≤ 280,
-mock_linkedin ≤ 3000) and passed validation before being stored.
+mock_linkedin ≤ 3000) and passed validation before being stored. This probe uses the
+explicit test setting `PLATFORMS=mastodon,mock_x,mock_linkedin`; a no-secret local run
+defaults to mocks only, so the README seed cannot contact a real platform.
 
 ---
 
