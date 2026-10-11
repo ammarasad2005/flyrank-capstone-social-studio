@@ -111,7 +111,9 @@ These are cheap and prevent rework across all tiers.
 > **Tier 0 exit criteria:** Postgres-backed, multi-worker, retrying, observable service with CI/CD
 > and all capstone probes green. This is "operable with the same features."
 >
-> **Current status:** Sprint 5's A6 migration/PGlite coverage and real BullMQ crash-recovery check passed with the required PR #10 CI checks (`build-test`, `postgres-concurrency`, and `gitleaks`). The raw-SQL migrator is an accepted ADR-0004 deviation, and D2/F4 staging is deferred by the owner. Tier 0 remains open until Sprint 6 completes T0-C cross-queue tracing and the hosted-dashboard/full forced-failure demonstration.
+> **Current status:** Sprint 5's A6 migration/PGlite coverage and real BullMQ crash-recovery check passed with the required PR #10 CI checks (`build-test`, `postgres-concurrency`, and `gitleaks`). The raw-SQL migrator is an accepted ADR-0004 deviation, and D2/F4 staging is deferred by the owner. The internal Tier 0 roadmap remains open until Sprint 6's cross-queue tracing and hosted-dashboard/full forced-failure demonstration are complete.
+
+**Capstone submission boundary (owner decision, 2026-10-11):** The internship submission is evaluated against the uploaded FlyRank capstone brief and its probes/evidence in `README.md` and `EVIDENCE.md`, not completion of every productionization task in this broader workplan. Hosted Grafana proof, a full externally observed forced-failure alert drill, and Tier 1/2 scaling remain optional self-learning/future work; they are not capstone blockers. PR #11 is separate observability work and must not be merged solely to close this roadmap.
 
 ---
 
