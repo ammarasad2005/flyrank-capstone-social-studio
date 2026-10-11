@@ -99,7 +99,8 @@ Mastodon works identically via `{"adapter":"mastodon"}`.
 
 Also verified against the **deployed** service at
 `https://flyrank-social-studio.onrender.com` (full ingest → generate → approve → schedule →
-scheduler-published) → **https://t.me/my_flyrank_demo/4**.
+scheduler-published) → **https://t.me/my_flyrank_demo/4**. Both public Telegram permalink URLs
+were checked for reachability on 2026-10-11; no new live post was sent during this review.
 
 ---
 
