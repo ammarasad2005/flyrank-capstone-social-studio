@@ -1,5 +1,7 @@
 // One-command seed: ingest a sample post, generate variants, approve two, and schedule
 // them a minute out so the running server publishes them on the next tick.
+import './env.js'; // load .env first, so PORT/BASE_URL match the running server
+
 const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
 
 const SAMPLE = {

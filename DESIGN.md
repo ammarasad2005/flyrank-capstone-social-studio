@@ -3,6 +3,15 @@
 *Phase 1 gate. One page of thinking to save a week of rework. Written before any
 feature code.*
 
+> **Status at submission (Phase 5).** This is the Phase-1 design as written, kept for the
+> record. Three things changed while building — all reflected in the code, README and
+> EVIDENCE:
+> - the real target is **Telegram** (Mastodon stayed in as a second *real* adapter);
+> - storage is **Postgres** — managed Neon in production, in-process PGlite locally and in
+>   tests (SQLite was dropped in the Tier-0 upgrade);
+> - `slots` gained retry/backoff/dead-letter state, so the worker has more states than the
+>   four listed below.
+
 ## Problem
 
 Turn **one** blog post into a **scheduled, multi-platform** social campaign. The
@@ -22,7 +31,8 @@ survives the real world**:
 
 **No image generation, no analytics/engagement tracking, and no real Instagram, X,
 or LinkedIn accounts.** Those three are represented by *mock* adapters. One real
-free target (Mastodon) plus the mocks is enough to prove the architecture.
+free target (Telegram; Mastodon is a second real adapter) plus the mocks is enough
+to prove the architecture.
 
 ## Data model
 
@@ -48,20 +58,22 @@ platform is a code file, not a migration.
    *successful* record for the same variant+slot impossible at the DB layer.
 2. Before sending, the publisher checks for an existing `succeeded` attempt with
    that key → if found, it returns that result and **sends nothing**.
-3. For the real target, the **Mastodon `Idempotency-Key` HTTP header** carries the
-   same key, so even a crash *between send and record* cannot double-post — Mastodon
-   itself de-duplicates. Mock adapters de-dupe by key in their own store.
+3. The attempt is marked `in_flight` **immediately before** the network send, so a crash
+   inside the send window is recorded rather than invisible. For idempotent targets
+   (**Mastodon's `Idempotency-Key` header**, and the mocks' UNIQUE key) a restart may
+   safely re-send; for an at-most-once target (**Telegram**, no dedupe key) the restart
+   refuses and flags the attempt `uncertain` instead of risking a duplicate.
 
-Belt **and** braces: app-layer guard + DB constraint + platform-native header.
+Belt **and** braces: app-layer guard + DB constraint + platform-native de-dupe.
 
 ### Durable scheduling (resumable)
 
-The **job store is the SQLite DB**, so it survives a restart. A worker loop:
+The **job store is the Postgres DB**, so it survives a restart. A worker loop:
 
 1. finds `slots` that are **due** (`scheduled_at <= now`), `pending`, whose variant
-   is `approved`;
+   is `approved`, and whose retry window has passed (`next_attempt_at`);
 2. **claims** each atomically (`UPDATE ... SET status='publishing' WHERE
-   status='pending'`) — only one claimer wins;
+   status='pending' ... FOR UPDATE SKIP LOCKED`) — only one claimer wins;
 3. publishes through the adapter, records the attempt, and marks the slot
    `published`.
 
@@ -95,6 +107,8 @@ interface SocialPublisher {
 
 Implementations, chosen by the `adapter` string on a slot (config, not code):
 
+- `telegram` → **TelegramPublisher** (real, free, Bot API; `sendMessage` has no idempotency
+  key, so it is at-most-once — see the README)
 - `mastodon`  → **MastodonPublisher** (real, free, OAuth token + Idempotency-Key header)
 - `mock_x`    → **MockXPublisher** (records what it *would* post; renders a preview)
 - `mock_linkedin` → **MockLinkedInPublisher** (same, LinkedIn-style)
@@ -106,6 +120,7 @@ slot changes **zero** business logic (PROBE 6).
 
 | Platform | max length | max hashtags | tone rule |
 | --- | --- | --- | --- |
+| `telegram` | 4096 | 5 | neutral (no ALL-CAPS shouting) |
 | `mastodon` | 500 | 4 | neutral (no ALL-CAPS shouting) |
 | `mock_x` | 280 | 3 | casual (≤1 link) |
 | `mock_linkedin` | 3000 | 5 | professional (no emoji, no ALL-CAPS shouting) |
@@ -119,7 +134,7 @@ e.g. `"mock_x: exceeds max length 280 (was 312)"`.
 2. **Ingestion + generation** → one post → two different valid variants; a
    rule-breaking variant blocked with a named rule.
 3. **Review workflow** → unapproved cannot be scheduled; approved can.
-4. **Adapters + idempotent publish** → a real message lands in Mastodon; a repeated
+4. **Adapters + idempotent publish** → a real message lands in Telegram; a repeated
    publish call creates exactly one post.
 5. **Scheduling, history, hardening** → worker restart mid-batch → zero duplicates;
    publish history; README. Plus a test suite for the scary cases.

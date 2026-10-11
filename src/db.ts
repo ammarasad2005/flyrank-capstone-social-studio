@@ -8,7 +8,7 @@
 // and idempotency (ON CONFLICT / UNIQUE) behave identically. This is the T0-A cutover:
 // SQLite is gone; everything is Postgres.
 
-import { readFile, readdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -61,6 +61,10 @@ async function createDb(): Promise<Db> {
   // ---- local / tests / demo: PGlite (in-process Postgres) ----
   const { PGlite } = await import('@electric-sql/pglite');
   const dir = process.env.DATABASE_PATH || 'data/pg';
+  // A fresh clone has no data/ (it is gitignored) and PGlite only creates the leaf
+  // directory, so create the parent path first — otherwise `npm start` dies with
+  // ENOENT before the listener opens.
+  if (dir !== ':memory:') await mkdir(dir, { recursive: true });
   const pg: any = dir === ':memory:' ? new PGlite() : new PGlite(dir);
   await pg.waitReady;
   const query: QueryFn = (text, params) => pg.query(text, params ?? []).then((r: any) => ({ rows: r.rows }));
