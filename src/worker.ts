@@ -2,6 +2,7 @@
 // can scale workers independently of the web process:
 //   QUEUE_DRIVER=inprocess node --import tsx src/worker.ts   (poller, no broker)
 //   QUEUE_DRIVER=bull       node --import tsx src/worker.ts   (Redis-backed fleet)
+import './env.js'; // load .env first (no-op when the file is absent)
 import { initSentry } from './observability/sentry.js';
 initSentry();
 

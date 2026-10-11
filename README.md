@@ -166,13 +166,18 @@ npm test
 1. In the Telegram app, message **@BotFather** → `/newbot` → copy the **bot token**.
 2. Create a channel, add the bot as an **admin**, and note the channel id (`@mychannel`
    for a public channel, or the numeric `-100…` id).
-3. In `.env`:
+3. In `.env`, add the Telegram platform and credentials:
    ```
+   PLATFORMS=telegram,mock_x,mock_linkedin
    TELEGRAM_BOT_TOKEN=123456:ABC...   # stays in .env, never committed
    TELEGRAM_CHAT_ID=@mychannel
    ```
-4. Schedule a variant with `{"adapter":"telegram"}` — it lands as a real message; a public
-   channel yields a real `https://t.me/…` permalink in `/history`.
+   Restart the server after editing `.env`. The normal `npm run seed` schedules the first
+   two generated variants; with this platform order that includes **one real Telegram
+   post** (plus one mock). Run it only when you intend to publish the public test message.
+4. Alternatively, create and approve a Telegram variant, then schedule it with
+   `{"adapter":"telegram"}` — it lands as a real message; a public channel yields a real
+   `https://t.me/…` permalink in `/history`.
 
 Mastodon works the same way as a second real target (`MASTODON_BASE_URL` +
 `MASTODON_ACCESS_TOKEN`, scope `write:statuses`, schedule with `{"adapter":"mastodon"}`).

@@ -13,7 +13,8 @@ const bool = (dflt: boolean) =>
 
 const csv = z
   .string()
-  .default('telegram,mock_x,mock_linkedin')
+  // Safe by default: a no-secret local run must never publish to a real platform.
+  .default('mock_x,mock_linkedin')
   .transform((v) => v.split(',').map((s) => s.trim()).filter(Boolean));
 
 const envSchema = z.object({
