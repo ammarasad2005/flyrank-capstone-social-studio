@@ -1,3 +1,4 @@
+import './env.js'; // load .env first (no-op when the file is absent)
 import { initSentry } from './observability/sentry.js';
 initSentry(); // before anything else, so early errors are captured
 

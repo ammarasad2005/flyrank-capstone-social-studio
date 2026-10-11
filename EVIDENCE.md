@@ -25,7 +25,9 @@ $ POST /posts/1/generate  {}
 ```
 
 Every generated variant is within its profile (mastodon ≤ 500, mock_x ≤ 280,
-mock_linkedin ≤ 3000) and passed validation before being stored.
+mock_linkedin ≤ 3000) and passed validation before being stored. This probe uses the
+explicit test setting `PLATFORMS=mastodon,mock_x,mock_linkedin`; a no-secret local run
+defaults to mocks only, so the README seed cannot contact a real platform.
 
 ---
 
@@ -97,7 +99,8 @@ Mastodon works identically via `{"adapter":"mastodon"}`.
 
 Also verified against the **deployed** service at
 `https://flyrank-social-studio.onrender.com` (full ingest → generate → approve → schedule →
-scheduler-published) → **https://t.me/my_flyrank_demo/4**.
+scheduler-published) → **https://t.me/my_flyrank_demo/4**. Both public Telegram permalink URLs
+were checked for reachability on 2026-10-11; no new live post was sent during this review.
 
 ---
 
