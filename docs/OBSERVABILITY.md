@@ -8,7 +8,7 @@ How to see, debug, and alert on the Social Media Studio.
 | --- | --- |
 | `GET /health` | Liveness — process is up. Always cheap. |
 | `GET /ready` | Readiness — checks DB, and Redis when `QUEUE_DRIVER=bull`. `200` ready / `503` not-ready with a per-check breakdown. |
-| `GET /metrics` | Prometheus metrics (disable with `METRICS_ENABLED=false`). |
+| `GET /metrics` | Prometheus metrics (disable with `METRICS_ENABLED=false`); optional Bearer gate via `METRICS_AUTH_TOKEN` (empty means public). |
 
 Point your platform's health check at `/ready` (gates traffic) and `/health` (restarts).
 
@@ -16,9 +16,20 @@ Point your platform's health check at `/ready` (gates traffic) and `/health` (re
 
 Structured JSON via **pino** — one object per line. Every HTTP request is logged with a
 generated/propagated `x-request-id` (returned as a response header) plus `responseTime`.
-Publish/queue events log `slotId`, `adapter`, and `outcome`. Control verbosity with
-`LOG_LEVEL` (`info` default; `silent` under `NODE_ENV=test`). Ship the stream to Render
-logs / Grafana Loki / Better Stack as-is.
+Publish/queue events log `slotId`, `adapter`, `outcome`, and (when Sentry tracing is
+initialized) `traceId`. Control verbosity with `LOG_LEVEL` (`info` default; `silent` under
+`NODE_ENV=test`). Ship the stream to Render logs / Grafana Loki / Better Stack as-is.
+
+## Cross-queue traces (C4)
+
+Each BullMQ slot producer span injects Sentry's `sentry-trace` and `baggage` plus the W3C
+`traceparent` into the Redis job data. The worker extracts that carrier with `continueTrace()`
+and creates a child `queue.process` span around `processSlot()`. The producer and consumer
+log the same trace id; the consumer span has its own span id. Legacy jobs without a carrier
+start a new trace. The periodic DB scanner is intentionally the root: scheduling a slot and
+publishing it happen asynchronously, so the HTTP scheduling request is not currently the
+parent. Configure `SENTRY_TRACES_SAMPLE_RATE` to a non-zero value to retain spans in Sentry;
+its default remains zero to avoid changing production event volume implicitly.
 
 ## Metrics
 
@@ -43,52 +54,32 @@ scrape_configs:
     static_configs:
       - targets: ['flyrank-social-studio.onrender.com']
     scheme: https
+    # If METRICS_AUTH_TOKEN is set, provide the same value from a secret file:
+    # authorization:
+    #   type: Bearer
+    #   credentials_file: /etc/prometheus/secrets/social-media-studio-metrics
 ```
 
-## Alerting rules (C6)
+An empty `METRICS_AUTH_TOKEN` preserves the legacy public endpoint. Generate a dedicated
+random token (at least 32 characters) and set it on Render before configuring hosted scraping;
+never reuse a social-platform or Sentry secret.
 
-Load these into Prometheus/Grafana/Better Stack. Thresholds are starting points.
+## Dashboard and alerting rules (C6)
 
-```yaml
-groups:
-  - name: social-media-studio
-    rules:
-      # Publish success-rate drop (< 90% over 10m, once there's traffic)
-      - alert: PublishSuccessRateLow
-        expr: |
-          sum(rate(publish_attempts_total{outcome="succeeded"}[10m]))
-          /
-          clamp_min(sum(rate(publish_attempts_total[10m])), 1) < 0.9
-        for: 10m
-        labels: { severity: page }
+The importable Grafana dashboard is `observability/grafana/social-media-studio.json`.
+The Prometheus rule file to upload is `observability/prometheus/alerts.yml`; the hosted scrape
+setup is in `docs/GRAFANA-CLOUD-SETUP.md`. Thresholds are starting points:
 
-      # DLQ arrivals — anything landing in the dead-letter queue
-      - alert: DeadLetterArrivals
-        expr: increase(publish_dead_letters_total[15m]) > 0
-        for: 0m
-        labels: { severity: page }
+| Rule | Condition | Hold time |
+| --- | --- | --- |
+| `PublishSuccessRateLow` | Publish success below 90%; suppressed when there is no traffic | 10m |
+| `DeadLetterArrivals` | Any dead-letter arrival in the last 15m | immediate |
+| `QueueBacklogHigh` | More than 50 pending slots | 10m |
+| `AdapterErrorSpike` | Adapter failure rate above 20%; suppressed when there is no traffic | 5m |
+| `Api5xxSpike` | API 5xx rate above 5%; suppressed when there is no traffic | 5m |
 
-      # Queue backlog / scheduler lag
-      - alert: QueueBacklogHigh
-        expr: slots_pending > 50
-        for: 10m
-        labels: { severity: warning }
-
-      # Adapter 5xx / error spike (failed publishes)
-      - alert: AdapterErrorSpike
-        expr: sum by (adapter) (rate(publish_attempts_total{outcome="failed"}[5m])) > 0.2
-        for: 5m
-        labels: { severity: warning }
-
-      # API 5xx spike
-      - alert: Api5xxSpike
-        expr: |
-          sum(rate(http_request_duration_seconds_count{status=~"5.."}[5m]))
-          /
-          clamp_min(sum(rate(http_request_duration_seconds_count[5m])), 1) > 0.05
-        for: 5m
-        labels: { severity: warning }
-```
+The rule file adds `service=social-media-studio` and severity labels so a dedicated Grafana
+notification route can target these alerts without changing the instance's default policy.
 
 Independently of Prometheus, a dead-letter also fires an **immediate push alert** via
 `ALERT_WEBHOOK_URL` (Slack/Discord incoming webhook) — see `src/notify.ts`.
@@ -100,8 +91,13 @@ errors and dead-letter events in Sentry. Without a DSN the integration is a safe
 
 ## Forced-failure drill (acceptance)
 
-Schedule a `telegram` slot with the bot token unset (or `ADAPTER_OVERRIDE` to a failing
-adapter). Expected: `publish_retries_total{adapter="telegram"}` climbs, then
-`publish_dead_letters_total{adapter="telegram"}` increments, the `ALERT_WEBHOOK_URL`
-webhook fires, Sentry receives the event (if a DSN is set), and `slots_dead_letter`
-rises — all visible on `/metrics`.
+Run `npm test` (including `tests/observability-failure.test.ts`) for the deterministic offline
+drill. It uses PGlite, a Telegram adapter with credentials explicitly blanked, an in-memory
+Sentry transport, and a stubbed webhook. It verifies two scheduled retries, a dead-letter,
+Sentry event capture, one Slack-style webhook payload, and the resulting metrics; every fetch
+is intercepted and the test asserts no Telegram request occurred. This test does not claim
+that the hosted Grafana dashboard or external Sentry/Slack accounts received the event.
+
+Do not force a failure against a real Telegram/Mastodon account in production. A live Sentry/
+Slack event and hosted Grafana scrape require explicit account access and a designated test
+channel/environment.

@@ -33,6 +33,7 @@ For each affected credential:
 | `TELEGRAM_BOT_TOKEN` | Regenerate/revoke the token with BotFather. | Confirm the bot can send to the configured channel using an explicitly approved test message. |
 | `ALERT_WEBHOOK_URL` | Revoke and recreate the Slack/Discord incoming webhook. | Send a clearly labeled setup notification; expect the webhook to accept it. |
 | `SENTRY_DSN` | Rotate/disable the project client key if exposure requires it; update the DSN. | Trigger a controlled capture-path error and confirm the event in the correct Sentry project. |
+| `METRICS_AUTH_TOKEN` | Generate a new random bearer token of at least 32 characters; update Render and the Grafana scrape credential together. | `/metrics` returns 401 without the token and 200 with it; confirm Grafana's scrape succeeds. |
 | `MASTODON_ACCESS_TOKEN` | Revoke and create a replacement token with only the needed write scope. | Verify with a controlled, approved test post—or keep the adapter disabled. |
 | `GEMINI_API_KEY` | Rotate the key in Google AI Studio / Cloud Console. | Make a non-production generation request and confirm no key is logged. |
 

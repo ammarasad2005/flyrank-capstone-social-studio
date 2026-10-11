@@ -1,5 +1,5 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import pinoHttp from 'pino-http';
 import { config } from './config.js';
 import { postsRouter } from './routes/posts.js';
@@ -8,7 +8,19 @@ import { systemRouter } from './routes/system.js';
 import { logger } from './observability/logger.js';
 import { register, httpDuration, normalizeRoute } from './observability/metrics.js';
 import { captureError } from './observability/sentry.js';
+import { captureTraceCarrier, traceIdFromCarrier } from './observability/tracing.js';
 import { checkDb, checkQueue } from './observability/health.js';
+
+function metricsRequestAuthorized(req: Request): boolean {
+  const expected = config.metrics.authToken;
+  if (!expected) return true; // backward-compatible, but protect this route before hosted scraping.
+
+  const providedText = req.get('authorization')?.match(/^Bearer\s+([A-Za-z0-9._~+/-]+=*)$/i)?.[1];
+  if (!providedText) return false;
+  const provided = Buffer.from(providedText, 'utf8');
+  const expectedBytes = Buffer.from(expected, 'utf8');
+  return provided.length === expectedBytes.length && timingSafeEqual(provided, expectedBytes);
+}
 
 export function createApp() {
   const app = express();
@@ -24,7 +36,13 @@ export function createApp() {
         res.setHeader('x-request-id', id);
         return id;
       },
-      autoLogging: { ignore: (req) => ['/health', '/ready', '/metrics'].includes(req.url || '') },
+      customProps: () => {
+        const traceId = traceIdFromCarrier(captureTraceCarrier());
+        return traceId ? { traceId } : {};
+      },
+      autoLogging: {
+        ignore: (req) => ['/health', '/ready', '/metrics'].includes((req.url || '').split('?')[0]),
+      },
     }),
   );
 
@@ -54,8 +72,12 @@ export function createApp() {
   });
 
   // Prometheus scrape endpoint (C3).
-  app.get('/metrics', async (_req: Request, res: Response) => {
+  app.get('/metrics', async (req: Request, res: Response) => {
     if (!config.metrics.enabled) return res.status(404).json({ error: 'metrics disabled' });
+    if (!metricsRequestAuthorized(req)) {
+      res.set('WWW-Authenticate', 'Bearer');
+      return res.status(401).json({ error: 'unauthorized' });
+    }
     res.set('Content-Type', register.contentType);
     res.end(await register.metrics());
   });

@@ -62,8 +62,13 @@ such a change is needed, design a separate operational migration step first.
 - [ ] If a deploy fails, stop and inspect logs before retrying; do not repeatedly redeploy
       a migration that partially changed the schema outside a transaction.
 
-## Deferred by owner decision
+## Deferred after staging review
 
-As of 2026-10-01, no staging service or manual promote path is provisioned. The main branch
-still auto-deploys to production after merge. Revisit this before onboarding customer data
-or if the workplan's full Tier-0 environment criterion becomes mandatory.
+As of 2026-10-02, no persistent staging service or manual promote path is provisioned. This
+solo capstone has no customer data, and every PR now exercises disposable real-Postgres and
+real-Redis checks. A persistent staging copy would also require isolated DB/queue state, secrets,
+and alert routing. Render's native per-PR preview environments require a Pro workspace and
+are billed as normal services ([Render preview docs](https://render.com/docs/preview-environments));
+that overhead is not justified yet. The main branch still auto-deploys to production after
+merge. Revisit staging before onboarding customer data or after a production incident indicates
+that CI + reviewed deployment is insufficient.
